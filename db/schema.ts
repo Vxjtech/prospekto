@@ -1,13 +1,16 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
-export const profiles=sqliteTable('profiles',{id:text('id').primaryKey(),name:text('name').notNull(),workspace:text('workspace').notNull(),createdAt:text('created_at').notNull()});
-export const lists=sqliteTable('saved_lists',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull().references(()=>profiles.id),name:text('name').notNull(),companyIds:text('company_ids').notNull(),updatedAt:text('updated_at').notNull()},t=>[index('lists_owner').on(t.ownerId)]);
-export const campaigns=sqliteTable('campaigns',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull().references(()=>profiles.id),name:text('name').notNull(),purpose:text('purpose').notNull(),subject:text('subject').notNull(),body:text('body').notNull(),companyIds:text('company_ids').notNull(),updatedAt:text('updated_at').notNull()},t=>[index('campaigns_owner').on(t.ownerId)]);
-export const botSettings=sqliteTable('bot_settings',{ownerId:text('owner_id').primaryKey().references(()=>profiles.id),settings:text('settings').notNull(),updatedAt:text('updated_at').notNull()});
-export const suppressions=sqliteTable('suppressions',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull().references(()=>profiles.id),email:text('email').notNull(),reason:text('reason').notNull(),createdAt:text('created_at').notNull()},t=>[uniqueIndex('suppressions_owner_email').on(t.ownerId,t.email)]);
-
-export const catalogCompanies=sqliteTable('catalog_companies',{
- id:text('id').primaryKey(),name:text('name').notNull(),sortName:text('sort_name').notNull(),ico:text('ico').notNull(),phones:text('phones').notNull(),emails:text('emails').notNull(),websites:text('websites').notNull(),categories:text('categories').notNull(),city:text('city').notNull().default(''),region:text('region').notNull().default(''),sourceUrl:text('source_url').notNull(),fetchedAt:text('fetched_at').notNull(),
-},t=>[index('catalog_name').on(t.sortName,t.id),index('catalog_region').on(t.region,t.sortName),index('catalog_ico').on(t.ico)]);
-export const catalogCategories=sqliteTable('catalog_categories',{companyId:text('company_id').notNull().references(()=>catalogCompanies.id),category:text('category').notNull()},t=>[primaryKey({columns:[t.category,t.companyId]})]);
-export const catalogMeta=sqliteTable('catalog_meta',{id:text('id').primaryKey(),ready:integer('ready').notNull().default(0),total:integer('total').notNull().default(0),withEmail:integer('with_email').notNull().default(0),regionsAvailable:integer('regions_available').notNull().default(0),importedAt:text('imported_at').notNull().default('')});
-export const catalogChunks=sqliteTable('catalog_chunks',{id:integer('id').primaryKey(),hash:text('hash').notNull(),rows:integer('rows').notNull()});
+// Versioned schema for the self-hosted application's private SQLite database.
+export const migrations = [{version: 1, sql: `
+CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
+CREATE INDEX sessions_user ON sessions(user_id);
+CREATE INDEX sessions_expiry ON sessions(expires_at);
+CREATE TABLE auth_attempts (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+CREATE TABLE profiles (id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, workspace TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE saved_lists (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, name TEXT NOT NULL, company_ids TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX lists_owner ON saved_lists(owner_id);
+CREATE TABLE campaigns (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, name TEXT NOT NULL, purpose TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, company_ids TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX campaigns_owner ON campaigns(owner_id);
+CREATE TABLE bot_settings (owner_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE, settings TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE suppressions (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, email TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE UNIQUE INDEX suppressions_owner_email ON suppressions(owner_id,email);
+`}];
