@@ -40,7 +40,7 @@ try {
   await page.getByLabel('Jméno',{exact:true}).fill('Jana');
   await page.getByLabel('Příjmení',{exact:true}).fill('Testová');
   await page.getByLabel('E-mail',{exact:true}).fill('ui-customer@example.test');
-  await page.getByLabel('Heslo',{exact:true}).fill('ui-test-password-123');
+  await page.locator('input[name="password"]').fill('ui-test-password-123');
   await page.getByRole('button',{name:'Vytvořit účet',exact:true}).click();
   await page.waitForURL('**/zakaznik/');
   check(await page.getByRole('link',{name:'Vytvořit poptávku',exact:true}).count()>0,'customer can access create-request CTA');
@@ -67,10 +67,10 @@ try {
   await provider.getByLabel('Příjmení',{exact:true}).fill('Novák');
   await provider.getByLabel('E-mail',{exact:true}).fill('ui-provider@example.test');
   await provider.getByLabel('Telefon',{exact:true}).fill('+420777111222');
-  await provider.getByLabel('Heslo',{exact:true}).fill('ui-test-password-123');
+  await provider.locator('input[name="password"]').fill('ui-test-password-123');
   await provider.getByRole('button',{name:'Vytvořit účet a pokračovat'}).click();
   await provider.waitForURL('**/onboarding/');
-  await provider.getByLabel('IČO',{exact:true}).fill('12345678');
+  await provider.locator('input[name="ico"]').fill('12345678');
   await provider.getByLabel('Obchodní jméno / název').fill('Novák rekonstrukce');
   await provider.getByLabel('Sídlo',{exact:true}).fill('Ostrava, Hlavní 1');
   await provider.getByRole('button',{name:'Uložit a pokračovat'}).click();
@@ -85,7 +85,7 @@ try {
   await provider.getByRole('button',{name:'Uložit a pokračovat'}).click();
   await provider.getByLabel('Popis',{exact:true}).fill('Provádíme kvalitní rekonstrukce koupelen.');
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=','base64');
-  await provider.getByLabel('Profilová fotografie / logo',{exact:true}).setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:png});
+  await provider.getByLabel('Profilová fotografie / logo').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:png});
   await provider.locator('.m-media-preview img').waitFor();
   await provider.getByRole('button',{name:'Dokončit nastavení'}).click();
   await provider.waitForURL('**/dodavatel/');
