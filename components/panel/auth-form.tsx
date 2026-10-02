@@ -21,6 +21,6 @@ export function AuthForm({login = false}: {login?: boolean}) {
     <Field label="Heslo" hint={login ? undefined : 'Alespoň 10 znaků.'}><input name="password" type="password" autoComplete={login ? 'current-password' : 'new-password'} minLength={10} maxLength={128} required/></Field>
     {error && <p className="p-error" role="alert">{error}</p>}
     <PanelButton type="submit" disabled={busy}>{busy ? 'Chvilku prosím…' : login ? 'Přihlásit se' : 'Vytvořit účet'}</PanelButton>
-    {!login && <p className="p-muted">Začnete s ukázkovou databází. Seznamy a nastavení zůstanou uložené pod vaším účtem.</p>}
+    {!login && <p className="p-muted">Firemní kontakty, seznamy a nastavení budou dostupné ve vašem účtu.</p>}
   </form>;
 }

@@ -46,11 +46,12 @@ Výchozí port je dostupný na `127.0.0.1:3000` serveru, aby před aplikací moh
 
 ## Firmy a uložená data
 
-- **32 fiktivních firem** je v `lib/demo-companies.ts`. V obou databázích funguje hledání, stránkování a kombinování kategorie a kraje.
-- Veřejně se zobrazují názvy. Kontakty ukázkových firem jsou dostupné po přihlášení; všechny jsou fiktivní a weby používají doménu `.example`.
-- Skutečná databáze 245 828 firem ani její import nejsou součástí této verze.
+- Katalog firem se načítá pouze pro čtení ze souboru `data/companies.sqlite3`; cesta se nastavuje přes `COMPANIES_DATABASE_PATH`.
+- Zdroj obsahuje tabulky `companies` a `company_categories`. Pole `phones`, `emails` a `websites` jsou JSON pole; veřejné API skrývá IČO i kontakty.
+- Zdroj obsahuje 245 828 firem a oborové kategorie. Neobsahuje město ani kraj, proto je filtr krajů vypnutý.
+- Při Docker buildu musí být `data/companies.sqlite3` přítomný; soubor se zkopíruje do image mimo svazek účtů.
 - Účty, relace, seznamy, koncepty, blokace a nastavení bota se ukládají do lokální SQLite databáze. Výchozí umístění je `data/prospekto.sqlite`.
-- Databázový soubor i tabulky se vytvoří **automaticky za běhu**, jakmile jsou potřeba pro účet. Build produkční databázi nevytváří a nepotřebuje její připojení.
+- Databázový soubor účtů i jeho tabulky se vytvoří **automaticky při buildu**; při prvním spuštění se případné migrace bezpečně doplní. Výchozí umístění je `data/prospekto.sqlite`.
 - Adresář databáze musí být zapisovatelný uživatelem serveru a trvalý mezi nasazeními. Neukládejte jej do `public/` nebo `.next/`.
 - Toto řešení je určené pro jeden Node.js server s lokálním diskem. Pro více nezávislých serverů zvolte sdílenou serverovou databázi.
 
@@ -78,7 +79,7 @@ Test spustí produkční standalone server s izolovanou dočasnou databází. Ov
 
 - `app/`, `components/` — stránky, API a React komponenty.
 - `lib/auth.ts` — účty a relace; `lib/http.ts` — kontrola původu a velikosti požadavků.
-- `lib/companies.ts`, `lib/demo-companies.ts` — pouze ukázková firemní data.
+- `lib/companies.ts`, `lib/company-types.ts` — read-only firemní katalog a jeho mapování.
 - `db/index.ts`, `db/schema.ts` — SQLite a automatické verzované schéma.
 - `lib/panel/` — uživatelská data a kontrola vlastnictví.
 - `public/` — loga, ikony a další veřejné soubory.

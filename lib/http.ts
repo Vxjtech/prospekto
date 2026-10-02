@@ -7,8 +7,17 @@ export function appOrigin(request: Request): string {
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('APP_URL must use http or https.');
   return url.origin;
 }
+export function requestProtocol(request: Request): string {
+  return request.headers.get('x-forwarded-proto')?.split(',')[0].trim() || new URL(request.url).protocol.slice(0, -1);
+}
 export function requireSameOrigin(request: Request) {
-  if (request.headers.get('origin') !== appOrigin(request)) throw new HttpError(403, 'Požadavek musí pocházet z Prospekta.');
+  const origin = request.headers.get('origin');
+  const protocol = requestProtocol(request);
+  const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host'))?.split(',')[0].trim();
+  const requestOrigin = host ? new URL(`${protocol}://${host}`).origin : new URL(request.url).origin;
+  if (origin !== requestOrigin && origin !== appOrigin(request)) {
+    throw new HttpError(403, 'Požadavek musí pocházet z Prospekta.');
+  }
 }
 export async function readJson(request: Request, limit = 65536): Promise<unknown> {
   if (!request.headers.get('content-type')?.startsWith('application/json')) throw new HttpError(415, 'Očekáváme JSON.');

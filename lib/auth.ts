@@ -2,7 +2,7 @@ import 'server-only';
 import {cookies} from 'next/headers';
 import {randomBytes, createHash, scrypt, timingSafeEqual} from 'node:crypto';
 import {query, transaction} from '@/db';
-import {HttpError, appOrigin} from './http';
+import {HttpError, requestProtocol} from './http';
 
 export type User = {userId: string; email: string; fullName: string | null};
 const COOKIE = 'prospekto_session';
@@ -37,7 +37,7 @@ export async function startSession(userId: string, request: Request) {
     query('DELETE FROM sessions WHERE expires_at<=?', Date.now()).run();
     query('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)', hash(token), userId, Date.now() + SESSION_SECONDS * 1000).run();
   });
-  jar.set(COOKIE, token, {httpOnly: true, sameSite: 'lax', secure: appOrigin(request).startsWith('https://'), path: '/', maxAge: SESSION_SECONDS});
+  jar.set(COOKIE, token, {httpOnly: true, sameSite: 'lax', secure: requestProtocol(request) === 'https', path: '/', maxAge: SESSION_SECONDS});
 }
 export async function endSession() {
   const jar = await cookies();

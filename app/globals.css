@@ -33,7 +33,8 @@
 .public-search-form{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) auto;align-items:end!important;gap:16px}
 .public-search-form .search-field,.public-search-form .public-search-note{grid-column:1/-1}
 .public-search-form .search-field{width:100%;min-width:0}
-.public-search-form .public-search-submit{min-height:52px}
+.public-search-form .public-search-submit{min-height:52px;align-self:start;margin-top:28px}
+@media(max-width:900px){.public-search-form .public-search-submit{margin-top:0}}
 .public-active-filters{align-items:flex-start;gap:18px}
 .public-active-filters small{display:block;margin-top:5px;font-size:13px;line-height:1.6;color:var(--quiet)}
 .public-active-filters>a{flex-shrink:0}

@@ -6,7 +6,7 @@ import {HeaderAccountActions} from '@/components/prospekto/header-account-action
 import {getPublicCompanies} from '@/lib/companies';
 import {COMPANY_CATEGORIES,CZECH_REGIONS} from '@/lib/company-types';
 
-export const metadata={title:'Databáze firem — veřejné demo | Prospekto',description:'Prohlédněte si názvy firem v ukázce databáze Prospekto bez registrace. Kontaktní údaje odemknete po přihlášení.'};
+export const metadata={title:'Databáze firem | Prospekto',description:'Prohlédněte si názvy českých firem bez registrace. Kontaktní údaje jsou dostupné po přihlášení.'};
 
 export const dynamic='force-dynamic';
 

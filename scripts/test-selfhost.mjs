@@ -14,6 +14,19 @@ await cp(resolve(root, '.next/static'), resolve(standalone, '.next/static'), {re
 await mkdir('.test-runtime', {recursive: true});
 const directory = await mkdtemp(resolve('.test-runtime/server-'));
 const filename = resolve(directory, 'private/prospekto.sqlite');
+const companyFilename = resolve(directory, 'companies.sqlite3');
+const companyDatabase = new DatabaseSync(companyFilename);
+companyDatabase.exec(`CREATE TABLE companies (source_key TEXT PRIMARY KEY, name TEXT NOT NULL, phones TEXT NOT NULL, emails TEXT NOT NULL, websites TEXT NOT NULL, ico TEXT NOT NULL, detail_url TEXT NOT NULL, fetched_at TEXT NOT NULL, first_seen_at TEXT NOT NULL);
+CREATE TABLE company_categories (source_key TEXT REFERENCES companies(source_key), url TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(source_key, url));`);
+const insertCompany = companyDatabase.prepare('INSERT INTO companies(source_key,name,phones,emails,websites,ico,detail_url,fetched_at,first_seen_at) VALUES(?,?,?,?,?,?,?,?,?)');
+const insertCategory = companyDatabase.prepare('INSERT INTO company_categories(source_key,url,name) VALUES(?,?,?)');
+for (let index = 1; index <= 520; index++) {
+  const id = `company-${String(index).padStart(2, '0')}`;
+  const category = index <= 2 ? 'Stavebnictví' : index === 3 ? 'Auto, moto' : index === 4 ? 'Reality' : 'Služby, obchod, prodej';
+  insertCompany.run(id, index === 1 ? 'Álpha Stavební s.r.o.' : `Firma ${index}`, JSON.stringify([`+420 555 000 ${String(index).padStart(3, '0')}`]), JSON.stringify([`kontakt-${index}@example.test`]), JSON.stringify([`https://firma-${index}.example`]), String(index).padStart(8, '0'), '', '', '');
+  insertCategory.run(id, `https://example.test/categories/${index}`, category);
+}
+companyDatabase.close();
 const socket = createServer();
 await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
 const port = socket.address().port;
@@ -22,7 +35,7 @@ const origin = `http://127.0.0.1:${port}`;
 let server, logs = '', checks = 0;
 function check(condition, message) { assert.ok(condition, message); checks++; console.log('PASS', message); }
 async function start() {
-  server = spawn(process.execPath, ['server.js'], {cwd: standalone, env: {...process.env, NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1', HOSTNAME: '127.0.0.1', PORT: String(port), APP_URL: origin, DATABASE_PATH: filename}, stdio: ['ignore', 'pipe', 'pipe']});
+  server = spawn(process.execPath, ['server.js'], {cwd: standalone, env: {...process.env, NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1', HOSTNAME: '127.0.0.1', PORT: String(port), APP_URL: 'https://configured.example', DATABASE_PATH: filename, COMPANIES_DATABASE_PATH: companyFilename}, stdio: ['ignore', 'pipe', 'pipe']});
   for (const stream of [server.stdout, server.stderr]) stream.on('data', value => { logs = (logs + value).slice(-10000); });
   for (let i = 0; i < 100; i++) {
     if (server.exitCode !== null) throw new Error('Server exited: ' + logs);
@@ -40,6 +53,7 @@ async function register(email, name) {
   assert.equal(response.status, 200, await response.clone().text());
   const setCookie = response.headers.get('set-cookie');
   check(setCookie.includes('HttpOnly') && /SameSite=lax/i.test(setCookie), 'session cookie uses HttpOnly and SameSite');
+  check(!/\bSecure\b/i.test(setCookie), 'session cookie security follows the HTTP request protocol');
   return setCookie.split(';')[0];
 }
 async function action(cookie, body) {
@@ -49,18 +63,20 @@ async function action(cookie, body) {
 }
 try {
   await start();
-  check(!await stat(filename).then(() => true, () => false), 'public demo starts without a pre-created database');
+  check(!await stat(filename).then(() => true, () => false), 'public catalog loads without creating the accounts database');
   const publicData = await (await request('/api/public-companies/')).json();
-  check(publicData.total === 32 && !publicData.ready && publicData.regionsAvailable, 'only 32 demo companies, with regions, are served');
+  check(publicData.total === 520 && publicData.ready && !publicData.regionsAvailable, 'company catalog loads from SQLite without region data');
   check(publicData.items.every(item => Object.keys(item).sort().join() === 'category,id,name,region'), 'public API excludes contacts and IČO');
-  for (const [category, region, expected] of [['stavebnictvi','ustecky',2], ['auto-moto','karlovarsky',2], ['reality','',3]]) {
-    const data = await (await request(`/api/public-companies/?kategorie=${category}&kraj=${region}`)).json();
-    check(data.total === expected, 'category + region: ' + category + ' / ' + (region || 'all'));
+  for (const [category, expected] of [['stavebnictvi',2], ['auto-moto',1], ['reality',1]]) {
+    const data = await (await request(`/api/public-companies/?kategorie=${category}`)).json();
+    check(data.total === expected, 'company category filter: ' + category);
   }
+  const search = await (await request('/api/public-companies/?q=alpha')).json();
+  check(search.total === 1 && search.items[0].id === 'company-01', 'company search is accent-insensitive');
   const page2 = await (await request('/api/public-companies/?strana=2')).json();
-  check(page2.page === 2 && page2.items.length === 12, 'server pagination remains bounded');
+  check(page2.page === 2 && page2.items.length === 20, 'server pagination remains bounded');
   const html = await (await request('/databaze/')).text();
-  check(!html.includes('@firma-') && !html.includes('+420 000') && html.includes('Zpět na úvod'), 'public page keeps contacts locked and home navigation available');
+  check(!html.includes('@example.test') && !html.includes('+420 555') && html.includes('Zpět na úvod'), 'public page keeps contacts locked and home navigation available');
   check((await request('/api/companies/')).status === 401, 'anonymous contacts are rejected');
   check((await request('/api/companies/', {extra: {'oai-authenticated-user-id':'fake-user','oai-authenticated-user-email':'fake@example.test'}})).status === 401, 'forged legacy identity headers do not authenticate');
   check((await request('/api/catalog-import/')).status === 404, 'real-database import endpoint is removed');
@@ -68,20 +84,27 @@ try {
   check((await request('/api/auth/register/', {body: {}, extra: {origin: 'https://other.example'}})).status === 403, 'cross-origin registration is rejected');
   const alice = await register('alice@example.test', 'Alice');
   const bob = await register('bob@example.test', 'Bob');
+  const filteredSelection = await request('/api/companies/?selectAll=1&kategorie=stavebnictvi', {cookie: alice});
+  const filteredIds = await filteredSelection.json();
+  check(filteredSelection.status === 200 && filteredIds.ids.length === 2 && filteredIds.ids.includes('company-01') && filteredIds.ids.includes('company-02'), 'select-all returns every ID matching active filters');
+  const largeSelection = await request('/api/companies/?selectAll=1', {cookie: alice});
+  const allCompanyIds = (await largeSelection.json()).ids;
+  check(allCompanyIds.length === 520, 'select-all supports result sets over 500 companies');
   check(await stat(filename).then(() => true), 'SQLite database and schema initialize automatically');
   check((await request('/api/auth/register/', {body: {email: 'ALICE@example.test', password: 'test-only-password-123', name: 'Alice', workspace: 'Another'}})).status === 409, 'duplicate accounts are rejected case-insensitively');
-  let state = await action(alice, {action: 'save-list', data: {name: 'Stavebnictví', companyIds: ['demo-13','demo-14']}});
+  let state = await action(alice, {action: 'save-list', data: {name: 'All filtered companies', companyIds: allCompanyIds}});
   const listId = state.lists[0].id;
-  check(state.lists.length === 1 && state.lists[0].companyIds.length === 2, 'saved lists persist in SQLite');
+  check(state.lists.length === 1 && state.lists[0].companyIds.length === 520, 'large selections persist in SQLite lists');
   const bobState = await (await request('/api/panel/', {cookie: bob})).json();
   check(bobState.state.lists.length === 0, 'accounts have separate data');
   check((await request('/api/companies/?list=' + listId, {cookie: bob})).status === 404, 'another account cannot read a saved list');
   await action(bob, {action: 'delete-list', id: listId});
   state = (await (await request('/api/panel/', {cookie: alice})).json()).state;
   check(state.lists.length === 1, 'another account cannot delete a saved list');
-  check((await request('/api/panel/', {cookie: alice, body: {action:'save-list', data:{name:'Invalid', companyIds:['zf:123']}}})).status === 400, 'real-company IDs cannot enter demo lists');
+  const unknownCompany = await request('/api/companies/?ids=missing-company', {cookie: alice});
+  check(unknownCompany.status === 200 && (await unknownCompany.json()).items.length === 0, 'unknown source IDs do not return company data');
   check((await request('/api/panel/', {cookie: alice, body:{action:'profile',data:{name:'Alice',workspace:'Changed'}},extra:{origin:'https://other.example'}})).status === 403, 'panel changes enforce same-origin requests');
-  state = await action(alice, {action:'save-campaign',data:{name:'Draft campaign',purpose:'Demo preview',subject:'Dobrý den',body:'Nabídka pro {{nazev_firmy}}',companyIds:['demo-13']}});
+  state = await action(alice, {action:'save-campaign',data:{name:'Draft campaign',purpose:'Demo preview',subject:'Dobrý den',body:'Nabídka pro {{nazev_firmy}}',companyIds:['company-13']}});
   check(state.campaigns.length === 1, 'campaign drafts remain functional');
   state = await action(alice, {action:'settings',data:{...state.settings,senderName:'Alice'}});
   check(state.settings.senderName === 'Alice', 'bot settings remain persistent');
@@ -90,7 +113,11 @@ try {
   const privateResponse = await request('/api/companies/', {cookie: alice});
   const privateData = await privateResponse.json();
   check(privateResponse.headers.get('cache-control').includes('no-store') && privateData.items.every(item => item.email && item.phone), 'authenticated contacts are complete and not publicly cached');
-  check((await request('/panel/', {cookie: alice})).status === 200, 'registered panel renders on the Node.js server');
+  const panelResponse = await request('/panel/', {cookie: alice});
+  const panelHtml = await panelResponse.text();
+  check(panelResponse.status === 200, 'registered panel renders on the Node.js server');
+  const selectionHeader = panelHtml.indexOf('p-selection-header');
+  check(panelHtml.includes('company-filter-search') && panelHtml.includes('Hledat') && selectionHeader >= 0 && panelHtml.indexOf('Vybrat vše', selectionHeader) < panelHtml.indexOf('Celou stranu', selectionHeader), 'signed-in company panel places both selection actions together');
   const sqlite = new DatabaseSync(filename);
   const hashes = sqlite.prepare('SELECT password_hash FROM users').all();
   check(hashes.length === 2 && hashes.every(row => row.password_hash.startsWith('scrypt:') && !row.password_hash.includes('test-only-password')), 'passwords are stored as salted hashes');

@@ -3,6 +3,7 @@ import {DatabaseSync, type SQLInputValue} from 'node:sqlite';
 import {mkdirSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {migrations} from './schema';
+import {applyMigrations} from './migrate.js';
 
 const globalDb = globalThis as typeof globalThis & {prospektoDb?: DatabaseSync};
 export function getDb(): DatabaseSync {
@@ -11,20 +12,10 @@ export function getDb(): DatabaseSync {
   mkdirSync(dirname(filename), {recursive: true, mode: 0o700});
   const db = new DatabaseSync(filename);
   try {
-    db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
-    db.exec('BEGIN IMMEDIATE');
-    const version = Number(db.prepare('PRAGMA user_version').get()?.user_version ?? 0);
-    if (version > migrations.at(-1)!.version) throw new Error('Database schema is newer than this application.');
-    for (const migration of migrations) {
-      if (migration.version <= version) continue;
-      db.exec(migration.sql);
-      db.exec(`PRAGMA user_version=${migration.version}`);
-    }
-    db.exec('COMMIT');
+    applyMigrations(db, migrations);
     globalDb.prospektoDb = db;
     return db;
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
     db.close();
     throw error;
   }

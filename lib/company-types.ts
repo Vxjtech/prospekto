@@ -32,7 +32,7 @@ export const CZECH_REGIONS=[
 
 export type CategoryId=typeof COMPANY_CATEGORIES[number]['id'];
 export type RegionId=typeof CZECH_REGIONS[number]['id'];
-export type Company={id:string;name:string;city:string;industry:string;category:CategoryId;region:RegionId|'';categories?:CategoryId[];phones?:string[];emails?:string[];websites?:string[];ico:string;phone:string;email:string;website:string};
+export type Company={id:string;name:string;city:string;industry:string;category:CategoryId|'';region:RegionId|'';categories?:CategoryId[];phones?:string[];emails?:string[];websites?:string[];ico:string;phone:string;email:string;website:string};
 export type PublicCompany=Pick<Company,'id'|'name'|'category'|'region'>;
 export function categoryLabel(id:string){return COMPANY_CATEGORIES.find(item=>item.id===id)?.label??'';}
 export function regionLabel(id:string){return CZECH_REGIONS.find(item=>item.id===id)?.label??'';}

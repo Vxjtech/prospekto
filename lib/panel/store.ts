@@ -1,7 +1,7 @@
 import {query} from '@/db';
 import type {User} from '@/lib/auth';
 import { defaultSettings, settingsInput, type Profile, type PanelState, type PanelAction, type SavedList, type Campaign, type Suppression } from './model';
-import { getCompaniesByIds } from '@/lib/companies';
+import { areCompanyIdsValid } from '@/lib/companies';
 
 export class PanelError extends Error{constructor(public status:number,message:string){super(message);}}
 export async function getProfile(user:User):Promise<Profile|null>{const row=await query('SELECT id, name, workspace, created_at AS createdAt FROM profiles WHERE id = ?', user.userId).get<Omit<Profile,'email'>>();return row?{...row,email:user.email}:null;}
@@ -17,7 +17,7 @@ async function ensureCapacity(table:'saved_lists'|'campaigns'|'suppressions',own
 export async function applyAction(user:User,input:PanelAction){
  const owner=user.userId,now=new Date().toISOString();
  const profile=await getProfile(user);if(!profile)throw new PanelError(403,'Nejdřív dokončete registraci.');
- if('data' in input&&'companyIds' in input.data&&(await getCompaniesByIds(input.data.companyIds)).length!==input.data.companyIds.length)throw new PanelError(400,'Výběr obsahuje neplatnou firmu.');
+ if('data' in input&&'companyIds' in input.data&&!areCompanyIdsValid(input.data.companyIds))throw new PanelError(400,'Výběr obsahuje neplatnou firmu.');
  switch(input.action){
  case 'profile':await query('UPDATE profiles SET name = ?, workspace = ? WHERE id = ?', input.data.name,input.data.workspace,owner).run();break;
  case 'save-list':await ensureCapacity('saved_lists',owner);await query('INSERT INTO saved_lists (id, owner_id, name, company_ids, updated_at) VALUES (?, ?, ?, ?, ?)', crypto.randomUUID(),owner,input.data.name,JSON.stringify(input.data.companyIds),now).run();break;
