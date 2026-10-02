@@ -151,6 +151,17 @@ try {
   check(sqlite.prepare('SELECT token_hash FROM sessions').all().every(row => !alice.includes(row.token_hash) && !bob.includes(row.token_hash)), 'raw session tokens are not stored');
   sqlite.close();
 
+
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=','base64');
+  const upload=await fetch(origin+'/api/media/',{method:'POST',headers:{origin,cookie:alice,'Content-Type':'image/png'},body:png});
+  check(upload.status===200,'provider can upload a profile photograph');
+  const {url:imageUrl}=await upload.json();
+  check((await request(imageUrl)).status===404,'unpublished uploads are not public');
+  check((await request('/api/accounts/',{cookie:bob,body:{action:'step',step:5,data:{avatarUrl:imageUrl}}})).status===400,'another provider cannot claim an uploaded photograph');
+  check((await request('/api/accounts/',{cookie:alice,body:{action:'step',step:5,data:{avatarUrl:imageUrl}}})).status===200,'profile accepts an owned internal media URL');
+  check((await request(imageUrl)).status===200,'published profile photograph becomes readable');
+  check((await request('/api/accounts/',{cookie:alice,body:{action:'step',step:5,data:{website:'invalid-url'}}})).status===400,'invalid external URL produces validation error instead of server failure');
+
   const customer=await createPerson('customer@example.test'),stranger=await createPerson('stranger@example.test');
   check(customer.redirectTo==='/zakaznik/','customer registration completes directly into customer dashboard');
   for(const path of ['/api/panel/','/api/companies/'])check((await request(path,{cookie:customer.cookie})).status===403,'customer cannot access '+path);

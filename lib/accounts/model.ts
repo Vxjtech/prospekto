@@ -20,7 +20,7 @@ const text=(max=160)=>z.string().trim().max(max);
 const required=(label:string,max=160)=>text(max).min(1,label);
 export const personalInput=z.object({firstName:required('Zadejte jméno.',80),lastName:required('Zadejte příjmení.',80),phone:text(30).refine(v=>!v||/^\+?[\d ()-]{7,30}$/.test(v),'Zadejte platný telefon.').default('')}).strict();
 export const accountTypeInput=z.enum(accountTypes);
-const url=z.union([z.literal(''),z.string().trim().max(2048).url().refine(v=>new URL(v).protocol==='https:','Použijte HTTPS adresu.')]);
+const url=z.union([z.literal(''),z.string().trim().max(2048).url().refine(v=>{try{return new URL(v).protocol==='https:';}catch{return false;}},'Použijte HTTPS adresu.')]);
 const media=z.union([url,z.string().regex(/^\/api\/media\/[a-f0-9-]{36}\/$/)]);
 export const businessInput=z.object({
   ico:z.string().trim().regex(/^\d{8}$/,'IČO musí obsahovat 8 číslic.'),
