@@ -30,7 +30,9 @@
 .company-filter-field>span{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;line-height:1.4}
 .company-filter-field>span svg{flex:none;color:var(--quiet)}
 .company-filter-field select{display:block;width:100%;min-width:0;min-height:52px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--forest);padding:12px 30px 12px 14px;font:inherit;font-size:14px;line-height:1.5;text-overflow:ellipsis;cursor:pointer}
-.public-search-form{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) auto;align-items:end!important;gap:16px}
+.public-search-form{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) auto;align-items:start!important;gap:16px}
+.public-search-form > .company-filter-field{display:flex;flex-direction:column;min-width:0}
+.public-search-form > .company-filter-field select{min-height:52px}
 .public-search-form .search-field,.public-search-form .public-search-note{grid-column:1/-1}
 .public-search-form .search-field{width:100%;min-width:0}
 .public-search-form .public-search-submit{min-height:52px;align-self:start;margin-top:28px}
