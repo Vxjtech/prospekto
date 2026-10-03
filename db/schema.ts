@@ -155,4 +155,34 @@ INSERT INTO services(id,parent_id,name) VALUES('akce','zabava-kultura','Organiza
 INSERT INTO services(id,parent_id,name) VALUES('fyzioterapie','zdravotnictvi','Fyzioterapie');
 INSERT INTO services(id,parent_id,name) VALUES('zdravotni-pece','zdravotnictvi','Zdravotní péče');
 INSERT INTO services(id,parent_id,name) VALUES('administrativa','urady-sprava','Administrativní služby');
+`}, {version:3, sql: `
+CREATE TABLE job_postings (
+ id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES provider_profiles(account_id),
+ created_by TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL,
+ category TEXT NOT NULL, city TEXT NOT NULL, region TEXT NOT NULL, address TEXT NOT NULL DEFAULT '',
+ employment_types TEXT NOT NULL, work_mode TEXT NOT NULL CHECK(work_mode IN ('ONSITE','HYBRID','REMOTE')),
+ salary_min INTEGER, salary_max INTEGER, salary_period TEXT NOT NULL CHECK(salary_period IN ('MONTH','HOUR','YEAR')),
+ currency TEXT NOT NULL DEFAULT 'CZK' CHECK(currency='CZK'),
+ description TEXT NOT NULL, responsibilities TEXT NOT NULL, requirements TEXT NOT NULL, benefits TEXT NOT NULL DEFAULT '',
+ education TEXT NOT NULL, experience TEXT NOT NULL, languages TEXT NOT NULL DEFAULT '',
+ suitable_graduates INTEGER NOT NULL DEFAULT 0 CHECK(suitable_graduates IN (0,1)),
+ suitable_disability INTEGER NOT NULL DEFAULT 0 CHECK(suitable_disability IN (0,1)),
+ contact_name TEXT NOT NULL, contact_email TEXT NOT NULL DEFAULT '', contact_phone TEXT NOT NULL DEFAULT '',
+ apply_url TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','PUBLISHED','CLOSED')),
+ published_at TEXT, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CHECK(salary_min IS NULL OR salary_min>=0), CHECK(salary_max IS NULL OR salary_max>=0),
+ CHECK(salary_min IS NULL OR salary_max IS NULL OR salary_max>=salary_min)
+);
+CREATE INDEX jobs_account ON job_postings(account_id,updated_at);
+CREATE INDEX jobs_public ON job_postings(status,expires_at,region,category,published_at);
+CREATE TABLE job_applications (
+ id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES job_postings(id),
+ customer_account_id TEXT NOT NULL REFERENCES customer_profiles(account_id),
+ user_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL, email TEXT NOT NULL,
+ phone TEXT NOT NULL DEFAULT '', message TEXT NOT NULL, resume_url TEXT NOT NULL DEFAULT '',
+ created_at TEXT NOT NULL, UNIQUE(job_id,customer_account_id)
+);
+CREATE INDEX job_applications_job ON job_applications(job_id,created_at);
+CREATE INDEX job_applications_customer ON job_applications(customer_account_id,created_at);
 `}];

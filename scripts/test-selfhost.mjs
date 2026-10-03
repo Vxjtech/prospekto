@@ -208,12 +208,57 @@ try {
   const companyId=(await (await request('/api/accounts/',{cookie:company.cookie})).json()).account.id;
   const companyLogin=await request('/api/auth/login/',{body:{email:'company@example.test',password:'test-only-password-123'}});
   check((await companyLogin.json()).redirectTo==='/firma/','finished company login reaches company dashboard');
+
+  // Recruitment is separate from supplier requests and scoped to the employer account.
+  const vacancy={title:'Stavbyvedoucí',category:'construction',city:'Ostrava',region:'moravskoslezsky',address:'Hlavní 1',
+    employmentTypes:['FULL_TIME'],workMode:'ONSITE',salaryMin:50000,salaryMax:70000,salaryPeriod:'MONTH',
+    description:'Hledáme kolegu pro vedení staveb a koordinaci týmu.',responsibilities:'Vedení stavby a koordinace dodavatelů.',
+    requirements:'Praxe ve stavebnictví a řidičský průkaz.',benefits:'Služební automobil a pět týdnů dovolené.',
+    education:'SECONDARY',experience:'EXPERIENCED',languages:'Čeština',suitableGraduates:false,suitableDisability:false,
+    contactName:'Personalista',contactEmail:'hr@example.test',contactPhone:'+420777222333',applyUrl:'',startDate:'',
+    expiresAt:new Date(Date.now()+30*86400000).toISOString().slice(0,10),status:'DRAFT'};
+  check((await request('/api/jobs/',{body:{action:'save',data:vacancy}})).status===401,'anonymous users cannot post vacancies');
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'save',data:vacancy}})).status===403,'customers cannot post vacancies');
+  const draft=await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',data:vacancy}});
+  assert.equal(draft.status,200,await draft.clone().text());const jobId=(await draft.json()).id;
+  check((await (await request('/api/jobs/')).json()).total===0,'draft jobs are hidden from public searches');
+  check((await request('/prace/'+jobId+'/')).status===404,'draft job detail is not public');
+  check((await request('/api/jobs/',{cookie:bob,body:{action:'save',id:jobId,data:vacancy}})).status===404,'another employer cannot edit a vacancy');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,salaryMax:1}}})).status===400,'invalid salary ranges are rejected');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,companyName:'DEK'}}})).status===400,'employer name cannot be spoofed in vacancy payload');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}})).status===200,'employer can publish a draft');
+  const jobData=await (await request('/api/jobs/?category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000')).json();
+  check(jobData.total===1&&jobData.items[0].companyName==='Test business','combined job filters and authoritative employer name work');
+  check((await (await request('/api/jobs/?salary=80000')).json()).total===0,'monthly salary filter excludes lower offers');
+  check((await (await request('/api/jobs/?mode=REMOTE')).json()).total===0,'work mode filter works');
+  check((await (await request('/api/jobs/?graduates=1')).json()).total===0,'graduate filter works');
+  const jobHtml=await (await request('/prace/'+jobId+'/')).text();
+  check(jobHtml.includes('JobPosting')&&jobHtml.includes('Stavbyvedoucí')&&jobHtml.includes('hr@example.test'),'public job detail includes structured job data and employer contact');
+  const reaction={jobId,name:'Jan Uchazeč',phone:'+420777555666',message:'Mám zájem o tuto pracovní pozici a zkušenosti s vedením staveb.',resumeUrl:''};
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===200,'customer can respond to a job');
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===409,'duplicate job applications are rejected');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:company.cookie})).json()).items.length===1,'employer sees their applicants');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:bob})).json()).items.length===0,'other employers cannot read applicants');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:customer.cookie})).json()).items.length===1,'customer sees own job applications');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:stranger.cookie})).json()).items.length===0,'another customer cannot read job applications');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'close',id:jobId},extra:{origin:'https://other.example'}})).status===403,'job changes enforce same-origin');
+  check((await request('/api/jobs/',{cookie:bob,body:{action:'close',id:jobId}})).status===404,'another employer cannot close a vacancy');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'close',id:jobId}})).status===200,'employer can close a vacancy');
+  check((await request('/prace/'+jobId+'/')).status===404,'closed vacancy disappears from public detail');
+  check((await request('/api/jobs/',{cookie:stranger.cookie,body:{action:'apply',data:reaction}})).status===404,'closed vacancy rejects new applications');
+  await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}});
+  const jobDb=new DatabaseSync(filename);
+  jobDb.prepare("UPDATE job_postings SET expires_at='2000-01-01' WHERE id=?").run(jobId);jobDb.close();
+  check((await (await request('/api/jobs/')).json()).total===0,'expired jobs disappear without a scheduled job');
+
   const testDb=new DatabaseSync(filename);
   const memberId=testDb.prepare('SELECT id FROM users WHERE email=?').get('stranger@example.test').id;
   testDb.prepare('INSERT INTO account_members VALUES(?,?,?,?)').run(companyId,memberId,'COMPANY_MEMBER',new Date().toISOString());
   testDb.close();
   check((await request('/api/accounts/',{cookie:stranger.cookie,body:{action:'switch',accountId:companyId}})).status===200,'company member can switch without logging out');
   check((await request('/api/accounts/',{cookie:stranger.cookie,body:{action:'step',step:2,data:{ico:'12345678',businessName:'Hijack',address:'X',billingAddress:'X'}}})).status===403,'company member cannot edit company settings');
+  check((await request('/api/jobs/',{cookie:stranger.cookie,body:{action:'save',data:vacancy}})).status===403,'company member cannot publish jobs');
+  check((await request('/api/jobs/?scope=applications',{cookie:stranger.cookie})).status===403,'company member cannot read recruitment personal data');
   await action(company.cookie,{action:'save-list',data:{name:'Shared company list',companyIds:['company-01']}});
   const shared=(await (await request('/api/panel/',{cookie:stranger.cookie})).json()).state;
   check(shared.lists.length===1&&shared.lists[0].name==='Shared company list','members share company data');

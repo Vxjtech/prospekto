@@ -104,6 +104,42 @@ try {
   const publicProfile=await context.request.get(origin+'/dodavatele/'+account.id+'/');
   check(publicProfile.ok()&&(await publicProfile.text()).includes('Novák rekonstrukce'),'completed provider profile is public');
   check(errors.length===0,'no uncaught browser errors: '+errors.join('; '));
+
+  await provider.setViewportSize({width:1440,height:1000});
+  await provider.goto(origin+'/zamestnavatel/prace/');
+  await provider.getByRole('button',{name:'+ Přidat pracovní nabídku',exact:true}).click();
+  await provider.getByLabel('Název pracovní pozice',{exact:true}).fill('Stavbyvedoucí testovací pozice');
+  await provider.getByLabel('Město',{exact:true}).fill('Ostrava');
+  await provider.getByLabel('Kraj',{exact:true}).selectOption('moravskoslezsky');
+  await provider.getByLabel('Mzda od (Kč)',{exact:true}).fill('50000');
+  await provider.getByLabel('Mzda do (Kč)',{exact:true}).fill('70000');
+  await provider.getByLabel('Představení pozice',{exact:true}).fill('Hledáme kolegu na pozici stavbyvedoucího pro naše nové projekty.');
+  await provider.getByLabel('Náplň práce',{exact:true}).fill('Řízení staveb a koordinace dodavatelů.');
+  await provider.getByLabel('Požadavky na uchazeče',{exact:true}).fill('Zkušenosti s vedením staveb a řidičský průkaz.');
+  await provider.getByRole('button',{name:'Zveřejnit nabídku',exact:true}).click();
+  await provider.getByRole('status').filter({hasText:'Pracovní nabídka je uložená'}).waitFor();
+  const jobList=await providerContext.request.get(origin+'/api/jobs/?scope=mine');
+  const postedJob=(await jobList.json()).items[0];
+  check(postedJob.status==='PUBLISHED','employer can publish a job through the UI');
+  await page.goto(origin+'/prace/');
+  await page.getByRole('link',{name:'Stavbyvedoucí testovací pozice',exact:true}).waitFor();
+  check(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'job catalog fits mobile viewport');
+  await page.screenshot({path:'test-results/jobs-mobile.png',fullPage:true});
+  await page.locator('input[name="q"]').fill('Stavbyvedoucí');
+  await page.getByRole('button',{name:'Hledat práci',exact:true}).click();
+  await page.getByRole('link',{name:'Stavbyvedoucí testovací pozice',exact:true}).click();
+  await page.getByRole('heading',{name:'Stavbyvedoucí testovací pozice',exact:true}).waitFor();
+  await page.getByLabel('Krátké představení',{exact:true}).fill('Mám zájem o nabízenou pozici a ráda se dozvím více.');
+  await page.getByRole('button',{name:'Odeslat reakci zaměstnavateli',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Vaše reakce je uložená'}).waitFor();
+  check(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'job detail fits mobile viewport');
+  await provider.goto(origin+'/zamestnavatel/prace/');
+  await provider.getByRole('heading',{name:'Reakce uchazečů (1)',exact:true}).waitFor();
+  check(await provider.locator('.j-application').count()===1,'employer sees submitted job application');
+  await page.goto(origin+'/moje-reakce/');
+  await page.getByRole('heading',{name:'Stavbyvedoucí testovací pozice',exact:true}).waitFor();
+  check(errors.length===0,'job UI has no uncaught browser errors: '+errors.join('; '));
+
   await context.close();await providerContext.close();
 } catch(error){console.error(logs);throw error;}
 finally{if(browser)await browser.close();if(server.exitCode===null){const closed=once(server,'exit');server.kill('SIGTERM');await closed;}await rm(directory,{recursive:true,force:true});}

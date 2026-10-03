@@ -126,3 +126,20 @@ Párování nyní používá služby, přesně zadaná města, vybrané kraje ne
 ### Ověření
 
 Spusťte npm run build, npm run typecheck, npm test. GitHub workflow Verify Prospekto spouští stejné kontroly na izolované databázi. Test npm run test:migration lze spustit samostatně a ověřuje migraci skutečného schématu v1, zachování dat, cizí klíče a opakovatelnost. Integrační testy ověřují všechny typy účtů, nedokončený onboarding, role, izolaci dat, přepínání kontextů, marketplace tok a zachování původních nástrojů.
+
+
+## Pracovní nabídky (schéma v3)
+
+Pracovní pozice tvoří samostatnou sekci /prace/, oddělenou od zákaznických poptávek. Zaměstnavatelé spravují inzeráty na /zamestnavatel/prace/. Název firmy a IČO se odvozují od aktivního podnikatelského účtu; nelze je podvrhnout v inzerátu.
+
+Inzerát obsahuje název pozice, obor, zaměstnavatele, město/kraj/adresu, typy spolupráce, režim práce, hrubou mzdu nebo odměnu v Kč od–do za hodinu/měsíc/rok, představení, náplň práce, požadavky, benefity, vzdělání, praxi, jazyky, vhodnost pro absolventy/OZP, nástup, kontakt a platnost. Webový detail obsahuje JSON-LD JobPosting.
+
+Katalog kombinuje hledání pozice/firmy/města, obor, kraj, druh spolupráce, práci na dálku, absolventy a minimální nabízenou měsíční mzdu. Mzdový filtr porovnává horní hranici uvedeného rozpětí (nebo jedinou zadanou částku); nabídky s jiným obdobím nebo bez mzdy do něj nezahrnuje. Stránkování má 20 záznamů.
+
+SELF_EMPLOYED, COMPANY_OWNER a COMPANY_ADMIN mohou vytvořit, upravit, zveřejnit a ukončit nabídku svého účtu. Koncepty, ukončené a prošlé nabídky nejsou veřejné. COMPANY_MEMBER nemůže upravovat nábor ani číst osobní údaje uchazečů.
+
+Dokončený zákaznický účet může reagovat zprávou, telefonem a volitelným HTTPS odkazem na životopis. E-mail je převzatý z přihlášeného účtu. Reakce vidí pouze příslušný uchazeč a oprávnění správci zaměstnavatele. Přehled zákazníka je na /moje-reakce/. Jedna reakce na nabídku a zákaznický účet; žádné automatické e-maily se neodesílají.
+
+Migrace v3 pouze přidává tabulky job_postings a job_applications a jejich indexy. Předchozí účty a obchodní data zachovává. Koncept i publikovaný inzerát vyžadují vyplněné základní údaje a alespoň jeden kontakt. Datum platnosti je včetně uvedeného dne (UTC).
+
+Nabídky jsou vlastní obsah zaměstnavatelů v Prospektu. Není zapojený import, scraping ani synchronizace Jobs.cz a nejsou předvyplněné fiktivní inzeráty skutečných firem. Struktura připomíná běžný pracovní portál. Jednotlivý účet může spravovat nejvýše 500 inzerátů; přehled reakcí načítá posledních 1000 odpovědí.

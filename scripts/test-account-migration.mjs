@@ -7,7 +7,7 @@ try {
   applyMigrations(db,[migrations[0]]);
   db.exec("INSERT INTO users VALUES('old-user','old@example.test','existing-scrypt-hash','2026-01-01'); INSERT INTO profiles VALUES('old-user','Old User','Old workspace','2026-01-01'); INSERT INTO sessions VALUES('token-hash','old-user',9999999999999); INSERT INTO saved_lists VALUES('old-list','old-user','Important contacts','[\"company-01\"]','2026-01-01'); INSERT INTO campaigns VALUES('old-campaign','old-user','Campaign','Purpose','Subject','Body','[]','2026-01-01'); INSERT INTO bot_settings VALUES('old-user','{\"senderName\":\"Old\"}','2026-01-01'); INSERT INTO suppressions VALUES('old-block','old-user','blocked@example.test','Do not send','2026-01-01');");
   applyMigrations(db,migrations);applyMigrations(db,migrations);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version,2);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,migrations.at(-1).version);
   assert.equal(db.prepare('SELECT password_hash FROM users').get().password_hash,'existing-scrypt-hash');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n,1);
   const account=db.prepare('SELECT * FROM accounts').get();
@@ -29,5 +29,7 @@ try {
   db.prepare('INSERT INTO suppressions(id,owner_id,email,reason,created_at,account_id) VALUES(?,?,?,?,?,?)').run('second-block','old-user','blocked@example.test','Second','now','second');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM bot_settings').get().n,2);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM suppressions').get().n,2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM job_postings').get().n,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM job_applications').get().n,0);
   console.log('PASS: v1 migration preserves users, sessions, lists, campaigns, bot settings and suppressions; idempotency, foreign keys and multiple contexts');
 }finally{db.close();}
