@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test-selfhost.mjs"
+    "test": "npm run test:migration && node scripts/test-selfhost.mjs",
+    "test:migration": "node --experimental-strip-types scripts/test-account-migration.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

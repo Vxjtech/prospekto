@@ -5,4 +5,4 @@ export function proxy(request: NextRequest) {
   if (!['/', '/databaze', '/databaze/'].includes(request.nextUrl.pathname)) response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   return response;
 }
-export const config = {matcher: ['/', '/databaze/:path*', '/panel/:path*', '/registrace/:path*', '/prihlaseni/:path*', '/api/:path*']};
+export const config = {matcher: ['/', '/databaze/:path*', '/panel/:path*', '/registrace/:path*', '/prihlaseni/:path*', '/api/:path*', '/onboarding/:path*', '/zakaznik/:path*', '/dodavatel/:path*', '/firma/:path*', '/administrace/:path*', '/nastroje/:path*']};

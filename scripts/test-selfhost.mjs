@@ -49,13 +49,39 @@ async function request(path, {cookie = '', body, method = body === undefined ? '
   return fetch(origin + path, {method, redirect: 'manual', headers: {origin, ...(cookie ? {cookie} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}), ...extra}, body: body === undefined ? undefined : JSON.stringify(body)});
 }
 async function register(email, name) {
-  const response = await request('/api/auth/register/', {body: {email, password: 'test-only-password-123', name, workspace: name + ' workspace'}});
+  const response = await request('/api/auth/register/', {body: {email, password: 'test-only-password-123', firstName:name,lastName:'Test',phone:'+420777123456',accountType:'SELF_EMPLOYED'}});
   assert.equal(response.status, 200, await response.clone().text());
   const setCookie = response.headers.get('set-cookie');
   check(setCookie.includes('HttpOnly') && /SameSite=lax/i.test(setCookie), 'session cookie uses HttpOnly and SameSite');
   check(!/\bSecure\b/i.test(setCookie), 'session cookie security follows the HTTP request protocol');
-  return setCookie.split(';')[0];
+  const cookie=setCookie.split(';')[0];
+  check((await response.json()).redirectTo==='/onboarding/','provider starts in onboarding');
+  check((await request('/api/panel/',{cookie})).status===403,'incomplete onboarding blocks provider tools');
+  await completeOnboarding(cookie);
+  return cookie;
 }
+
+async function completeOnboarding(cookie) {
+  for(const [step,data] of [
+    [2,{ico:'12345678',businessName:'Test business',address:'Ostrava 1',billingAddress:'Ostrava 1'}],
+    [3,{primaryServiceId:'stavebnictvi',serviceIds:['rekonstrukce','zednicke-prace'],specializations:['Koupelny']}],
+    [4,{city:'Ostrava',postalCode:'70030',regions:['moravskoslezsky'],cities:[],nationwide:false,maxDistanceKm:40}],
+    [5,{}],
+  ]) {
+    const response=await request('/api/accounts/',{cookie,body:{action:'step',step,data}});
+    assert.equal(response.status,200,await response.clone().text());
+  }
+}
+async function market(cookie,body) {
+  const response=await request('/api/marketplace/',{cookie,body});
+  assert.equal(response.status,200,await response.clone().text());return (await response.json()).state;
+}
+async function createPerson(email,accountType='CUSTOMER') {
+  const response=await request('/api/auth/register/',{body:{email,password:'test-only-password-123',firstName:'Jan',lastName:'Novák',phone:accountType==='CUSTOMER'?'':'+420777123456',accountType}});
+  assert.equal(response.status,200,await response.clone().text());
+  return {cookie:response.headers.get('set-cookie').split(';')[0],...(await response.json())};
+}
+
 async function action(cookie, body) {
   const response = await request('/api/panel/', {cookie, body});
   assert.equal(response.status, 200, await response.clone().text());
@@ -91,7 +117,7 @@ try {
   const allCompanyIds = (await largeSelection.json()).ids;
   check(allCompanyIds.length === 520, 'select-all supports result sets over 500 companies');
   check(await stat(filename).then(() => true), 'SQLite database and schema initialize automatically');
-  check((await request('/api/auth/register/', {body: {email: 'ALICE@example.test', password: 'test-only-password-123', name: 'Alice', workspace: 'Another'}})).status === 409, 'duplicate accounts are rejected case-insensitively');
+  check((await request('/api/auth/register/', {body: {email: 'ALICE@example.test', password: 'test-only-password-123', firstName:'Alice',lastName:'Test',accountType:'CUSTOMER'}})).status === 409, 'duplicate accounts are rejected case-insensitively');
   let state = await action(alice, {action: 'save-list', data: {name: 'All filtered companies', companyIds: allCompanyIds}});
   const listId = state.lists[0].id;
   check(state.lists.length === 1 && state.lists[0].companyIds.length === 520, 'large selections persist in SQLite lists');
@@ -113,7 +139,8 @@ try {
   const privateResponse = await request('/api/companies/', {cookie: alice});
   const privateData = await privateResponse.json();
   check(privateResponse.headers.get('cache-control').includes('no-store') && privateData.items.every(item => item.email && item.phone), 'authenticated contacts are complete and not publicly cached');
-  const panelResponse = await request('/panel/', {cookie: alice});
+  check((await request('/panel/',{cookie:alice})).headers.get('location')==='/dodavatel/','legacy panel entry resolves to provider dashboard');
+  const panelResponse = await request('/nastroje/', {cookie: alice});
   const panelHtml = await panelResponse.text();
   check(panelResponse.status === 200, 'registered panel renders on the Node.js server');
   const selectionHeader = panelHtml.indexOf('p-selection-header');
@@ -123,6 +150,132 @@ try {
   check(hashes.length === 2 && hashes.every(row => row.password_hash.startsWith('scrypt:') && !row.password_hash.includes('test-only-password')), 'passwords are stored as salted hashes');
   check(sqlite.prepare('SELECT token_hash FROM sessions').all().every(row => !alice.includes(row.token_hash) && !bob.includes(row.token_hash)), 'raw session tokens are not stored');
   sqlite.close();
+
+
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=','base64');
+  const upload=await fetch(origin+'/api/media/',{method:'POST',headers:{origin,cookie:alice,'Content-Type':'image/png'},body:png});
+  check(upload.status===200,'provider can upload a profile photograph');
+  const {url:imageUrl}=await upload.json();
+  check((await request(imageUrl)).status===404,'unpublished uploads are not public');
+  check((await request('/api/accounts/',{cookie:bob,body:{action:'step',step:5,data:{avatarUrl:imageUrl}}})).status===400,'another provider cannot claim an uploaded photograph');
+  check((await request('/api/accounts/',{cookie:alice,body:{action:'step',step:5,data:{avatarUrl:imageUrl}}})).status===200,'profile accepts an owned internal media URL');
+  check((await request(imageUrl)).status===200,'published profile photograph becomes readable');
+  check((await request('/api/accounts/',{cookie:alice,body:{action:'step',step:5,data:{website:'invalid-url'}}})).status===400,'invalid external URL produces validation error instead of server failure');
+
+  const customer=await createPerson('customer@example.test'),stranger=await createPerson('stranger@example.test');
+  check(customer.redirectTo==='/zakaznik/','customer registration completes directly into customer dashboard');
+  for(const path of ['/api/panel/','/api/companies/'])check((await request(path,{cookie:customer.cookie})).status===403,'customer cannot access '+path);
+  check((await request('/dodavatel/crm/',{cookie:customer.cookie})).headers.get('location')==='/zakaznik/','customer cannot enter supplier routes');
+  check((await request('/zakaznik/',{cookie:alice})).headers.get('location')==='/dodavatel/','provider cannot enter customer routes');
+  const customerHtml=await (await request('/zakaznik/',{cookie:customer.cookie})).text();
+  check(customerHtml.includes('Vytvořit poptávku')&&!customerHtml.includes('href="/nastroje/"')&&!customerHtml.includes('href="/zakaznik/crm/"'),'customer dashboard has customer navigation');
+  check((await request('/api/accounts/',{cookie:customer.cookie,body:{action:'switch',accountId:'unknown'}})).status===403,'switching to an unowned account fails');
+  check((await request('/api/auth/register/',{body:{email:'bad-role@example.test',password:'test-only-password-123',firstName:'Test',lastName:'Test',accountType:'PLATFORM_ADMIN'}})).status===400,'registration cannot grant platform admin');
+  check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'lead',title:'Forged',contactName:'',valueCzk:0}})).status===403,'customer cannot create a lead');
+  const rstate=await market(customer.cookie,{action:'request',title:'Rekonstrukce koupelny',description:'Potřebuji rekonstruovat koupelnu v bytě.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:100000});
+  const requestId=rstate.requests[0].id;
+  check((await (await request('/api/marketplace/',{cookie:stranger.cookie})).json()).state.requests.length===0,'customer requests are account-scoped');
+  check((await request('/api/marketplace/',{cookie:stranger.cookie,body:{action:'close-request',id:requestId}})).status===404,'another customer cannot close a request');
+  let mstate=await market(alice,{action:'interest',requestId});
+  check(mstate.leads.length===1,'relevant request becomes a provider lead');
+  mstate=await market(alice,{action:'interest',requestId});
+  check(mstate.leads.length===1,'interest is idempotent');
+  const leadId=mstate.leads[0].id;
+  check((await request('/api/marketplace/',{cookie:bob,body:{action:'stage',id:leadId,stage:'WON'}})).status===404,'another provider cannot modify a lead');
+  const aliceId=(await (await request('/api/accounts/',{cookie:alice})).json()).account.id;
+  await market(alice,{action:'message',requestId,providerId:aliceId,body:'Rádi připravíme nabídku.'});
+  check((await request('/api/marketplace/',{cookie:bob,body:{action:'message',requestId,providerId:aliceId,body:'Forged'}})).status===404,'another provider cannot write to an existing thread');
+  await market(customer.cookie,{action:'message',requestId,providerId:aliceId,body:'Děkuji, pošlete mi prosím cenu.'});
+  check((await (await request('/api/marketplace/',{cookie:bob})).json()).state.messages.length===0,'messages are private to participating accounts');
+  mstate=await market(alice,{action:'offer',requestId,body:'Kompletní rekonstrukce koupelny včetně materiálu.',amountCzk:95000});
+  const offerId=mstate.offers[0].id;
+  check((await request('/api/marketplace/',{cookie:stranger.cookie,body:{action:'accept-offer',id:offerId}})).status===404,'another customer cannot accept an offer');
+  await market(customer.cookie,{action:'accept-offer',id:offerId});
+  check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'accept-offer',id:offerId}})).status===409,'offer cannot be accepted twice');
+  check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.summary.won===1,'accepted offer becomes a won job');
+  await market(customer.cookie,{action:'close-request',id:requestId});
+  await market(customer.cookie,{action:'review',requestId,rating:5,body:'Skvěle odvedená práce.'});
+  check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'review',requestId,rating:5,body:'Again'}})).status===409,'duplicate reviews are rejected');
+  await market(customer.cookie,{action:'favorite',providerId:aliceId,enabled:true});
+  check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.providers.some(p=>p.id===aliceId&&p.favorite),'favorite supplier persists');
+  const company=await createPerson('company@example.test','COMPANY');
+  const unfinished=(await (await request('/api/accounts/',{cookie:company.cookie})).json()).account;
+  check(unfinished.role==='COMPANY_OWNER'&&unfinished.step===2,'company user becomes owner and resumes at business step');
+  check((await request('/api/accounts/',{cookie:company.cookie,body:{action:'step',step:5,data:{}}})).status===409,'onboarding steps cannot be skipped');
+  const relog=await request('/api/auth/login/',{body:{email:'company@example.test',password:'test-only-password-123'}});
+  check((await relog.json()).redirectTo==='/onboarding/','unfinished onboarding resumes after a new login');
+  await completeOnboarding(company.cookie);
+  const companyId=(await (await request('/api/accounts/',{cookie:company.cookie})).json()).account.id;
+  const companyLogin=await request('/api/auth/login/',{body:{email:'company@example.test',password:'test-only-password-123'}});
+  check((await companyLogin.json()).redirectTo==='/firma/','finished company login reaches company dashboard');
+
+  // Recruitment is separate from supplier requests and scoped to the employer account.
+  const vacancy={title:'Stavbyvedoucí',category:'construction',city:'Ostrava',region:'moravskoslezsky',address:'Hlavní 1',
+    employmentTypes:['FULL_TIME'],workMode:'ONSITE',salaryMin:50000,salaryMax:70000,salaryPeriod:'MONTH',
+    description:'Hledáme kolegu pro vedení staveb a koordinaci týmu.',responsibilities:'Vedení stavby a koordinace dodavatelů.',
+    requirements:'Praxe ve stavebnictví a řidičský průkaz.',benefits:'Služební automobil a pět týdnů dovolené.',
+    education:'SECONDARY',experience:'EXPERIENCED',languages:'Čeština',suitableGraduates:false,suitableDisability:false,
+    contactName:'Personalista',contactEmail:'hr@example.test',contactPhone:'+420777222333',applyUrl:'',startDate:'',
+    expiresAt:new Date(Date.now()+30*86400000).toISOString().slice(0,10),status:'DRAFT'};
+  check((await request('/api/jobs/',{body:{action:'save',data:vacancy}})).status===401,'anonymous users cannot post vacancies');
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'save',data:vacancy}})).status===403,'customers cannot post vacancies');
+  const draft=await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',data:vacancy}});
+  assert.equal(draft.status,200,await draft.clone().text());const jobId=(await draft.json()).id;
+  check((await (await request('/api/jobs/')).json()).total===0,'draft jobs are hidden from public searches');
+  check((await request('/prace/'+jobId+'/')).status===404,'draft job detail is not public');
+  check((await request('/api/jobs/',{cookie:bob,body:{action:'save',id:jobId,data:vacancy}})).status===404,'another employer cannot edit a vacancy');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,salaryMax:1}}})).status===400,'invalid salary ranges are rejected');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,companyName:'DEK'}}})).status===400,'employer name cannot be spoofed in vacancy payload');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}})).status===200,'employer can publish a draft');
+  const jobData=await (await request('/api/jobs/?category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000')).json();
+  check(jobData.total===1&&jobData.items[0].companyName==='Test business','combined job filters and authoritative employer name work');
+  check((await (await request('/api/jobs/?salary=80000')).json()).total===0,'monthly salary filter excludes lower offers');
+  check((await (await request('/api/jobs/?mode=REMOTE')).json()).total===0,'work mode filter works');
+  check((await (await request('/api/jobs/?graduates=1')).json()).total===0,'graduate filter works');
+  const jobHtml=await (await request('/prace/'+jobId+'/')).text();
+  check(jobHtml.includes('JobPosting')&&jobHtml.includes('Stavbyvedoucí')&&jobHtml.includes('hr@example.test'),'public job detail includes structured job data and employer contact');
+  const reaction={jobId,name:'Jan Uchazeč',phone:'+420777555666',message:'Mám zájem o tuto pracovní pozici a zkušenosti s vedením staveb.',resumeUrl:''};
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===200,'customer can respond to a job');
+  check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===409,'duplicate job applications are rejected');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:company.cookie})).json()).items.length===1,'employer sees their applicants');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:bob})).json()).items.length===0,'other employers cannot read applicants');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:customer.cookie})).json()).items.length===1,'customer sees own job applications');
+  check((await (await request('/api/jobs/?scope=applications',{cookie:stranger.cookie})).json()).items.length===0,'another customer cannot read job applications');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'close',id:jobId},extra:{origin:'https://other.example'}})).status===403,'job changes enforce same-origin');
+  check((await request('/api/jobs/',{cookie:bob,body:{action:'close',id:jobId}})).status===404,'another employer cannot close a vacancy');
+  check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'close',id:jobId}})).status===200,'employer can close a vacancy');
+  check((await request('/prace/'+jobId+'/')).status===404,'closed vacancy disappears from public detail');
+  check((await request('/api/jobs/',{cookie:stranger.cookie,body:{action:'apply',data:reaction}})).status===404,'closed vacancy rejects new applications');
+  await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}});
+  const jobDb=new DatabaseSync(filename);
+  jobDb.prepare("UPDATE job_postings SET expires_at='2000-01-01' WHERE id=?").run(jobId);jobDb.close();
+  check((await (await request('/api/jobs/')).json()).total===0,'expired jobs disappear without a scheduled job');
+
+  const testDb=new DatabaseSync(filename);
+  const memberId=testDb.prepare('SELECT id FROM users WHERE email=?').get('stranger@example.test').id;
+  testDb.prepare('INSERT INTO account_members VALUES(?,?,?,?)').run(companyId,memberId,'COMPANY_MEMBER',new Date().toISOString());
+  testDb.close();
+  check((await request('/api/accounts/',{cookie:stranger.cookie,body:{action:'switch',accountId:companyId}})).status===200,'company member can switch without logging out');
+  check((await request('/api/accounts/',{cookie:stranger.cookie,body:{action:'step',step:2,data:{ico:'12345678',businessName:'Hijack',address:'X',billingAddress:'X'}}})).status===403,'company member cannot edit company settings');
+  check((await request('/api/jobs/',{cookie:stranger.cookie,body:{action:'save',data:vacancy}})).status===403,'company member cannot publish jobs');
+  check((await request('/api/jobs/?scope=applications',{cookie:stranger.cookie})).status===403,'company member cannot read recruitment personal data');
+  await action(company.cookie,{action:'save-list',data:{name:'Shared company list',companyIds:['company-01']}});
+  const shared=(await (await request('/api/panel/',{cookie:stranger.cookie})).json()).state;
+  check(shared.lists.length===1&&shared.lists[0].name==='Shared company list','members share company data');
+  check((await request('/api/panel/',{cookie:stranger.cookie,body:{action:'settings',data:shared.settings}})).status===403,'company member cannot change bot configuration');
+  const addContext=await request('/api/accounts/',{cookie:alice,body:{action:'choose',type:'CUSTOMER',newContext:true}});
+  check(addContext.status===200&&(await addContext.json()).redirectTo==='/zakaznik/','one person can add a customer context');
+  check((await request('/api/panel/',{cookie:alice})).status===403,'switching contexts immediately changes permissions');
+  await request('/api/accounts/',{cookie:alice,body:{action:'switch',accountId:aliceId}});
+  check((await (await request('/api/panel/',{cookie:alice})).json()).state.lists[0].id===listId,'switching back preserves the original provider records');
+  check((await request('/api/accounts/',{cookie:alice,body:{action:'switch',accountId:aliceId},extra:{origin:'https://other.example'}})).status===403,'account switching enforces same-origin');
+  check((await request('/administrace/',{cookie:customer.cookie})).headers.get('location')==='/zakaznik/','ordinary users cannot access platform administration');
+  const dbAdmin=new DatabaseSync(filename);
+  dbAdmin.prepare("UPDATE users SET platform_role='PLATFORM_ADMIN' WHERE email=?").run('stranger@example.test');
+  dbAdmin.close();
+  const adminLogin=await request('/api/auth/login/',{body:{email:'stranger@example.test',password:'test-only-password-123'}});
+  check((await adminLogin.json()).redirectTo==='/administrace/','platform admin is routed to administration');
+
   await stop(); await start();
   state = (await (await request('/api/panel/', {cookie: alice})).json()).state;
   check(state.lists[0].id === listId && state.campaigns.length === 1 && state.settings.senderName === 'Alice', 'accounts, sessions and saved data survive a server restart');
@@ -131,7 +284,7 @@ try {
   check((await request('/api/auth/logout/', {cookie: alice, method:'POST'})).status === 200 && (await request('/api/companies/', {cookie:alice})).status === 401, 'logout revokes the server-side session');
   check((await request('/api/auth/login/', {body:{email:'alice@example.test',password:'wrong-password-123'}})).status === 401, 'wrong passwords are rejected');
   const login = await request('/api/auth/login/', {body:{email:'ALICE@example.test',password:'test-only-password-123'}});
-  check(login.status === 200 && !!login.headers.get('set-cookie'), 'existing users can sign in with email and password');
+  check(login.status === 200 && !!login.headers.get('set-cookie') && (await login.json()).redirectTo==='/dodavatel/', 'existing users can sign in with email and password');
   for(let i=0;i<15;i++) assert.equal((await request('/api/auth/login/', {body:{email:'missing@example.test',password:'wrong-password-123'}})).status,401);
   check((await request('/api/auth/login/', {body:{email:'missing@example.test',password:'wrong-password-123'}})).status === 429, 'login attempts are rate-limited');
   console.log(`\n${checks} self-hosted integration checks passed.`);
