@@ -13,6 +13,7 @@ export function getDb(): DatabaseSync {
   const db = new DatabaseSync(filename);
   try {
     applyMigrations(db, migrations);
+    db.function('normalize_text', {deterministic:true}, value => String(value??'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase());
     globalDb.prospektoDb = db;
     return db;
   } catch (error) {
@@ -36,3 +37,4 @@ export function transaction<T>(callback: () => T): T {
   try { const result = callback(); db.exec('COMMIT'); return result; }
   catch (error) { db.exec('ROLLBACK'); throw error; }
 }
+

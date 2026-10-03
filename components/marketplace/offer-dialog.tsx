@@ -1,0 +1,13 @@
+'use client';
+import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {Send,X} from 'lucide-react';
+import {Field} from '@/components/panel/ui';
+export function OfferDialog({request,onClose,onSend,errorMessage}:{request:{id:string;title:string}|null;onClose:()=>void;errorMessage:string;onSend:(body:{action:'offer';requestId:string;body:string;amountCzk:number})=>Promise<boolean>}){
+  const dialog=useRef<HTMLDialogElement>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{if(request){setError('');dialog.current?.showModal();}else dialog.current?.close();},[request]);
+  async function submit(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();if(busy||!request)return;setBusy(true);setError('');const data=new FormData(event.currentTarget);
+    try{if(await onSend({action:'offer',requestId:request.id,body:String(data.get('body')).trim(),amountCzk:Number(data.get('amountCzk'))}))onClose();else setError('Nabídka se neodeslala. Zkontrolujte upozornění na stránce a zkuste to znovu.');}finally{setBusy(false);}
+  }
+  return <dialog className="m-offer-dialog" ref={dialog} aria-labelledby="offer-heading" onCancel={event=>{if(busy)event.preventDefault();else onClose();}} onClose={()=>{if(!busy)onClose();}}>{request&&<form className="p-form" key={request.id} onSubmit={e=>void submit(e)}><div className="m-section-heading"><div><span className="m-eyebrow">Vaše nabídka zákazníkovi</span><h2 id="offer-heading">Poslat nabídku</h2></div><button className="m-icon-button" type="button" aria-label="Zavřít nabídku" disabled={busy} onClick={onClose}><X size={21}/></button></div><div className="m-offer-context"><small>K poptávce</small><strong>{request.title}</strong></div><p className="m-help">Popište, co za uvedenou cenu zajistíte a kdy můžete začít. Nabídka se zobrazí přímo zákazníkovi.</p><Field label="Co zákazníkovi nabízíte?"><textarea name="body" placeholder="Např. Zajistím práci včetně materiálu. Začít mohu příští týden…" minLength={5} maxLength={5000} rows={5} required autoFocus/></Field><Field label="Celková nabízená cena v Kč"><input name="amountCzk" type="number" inputMode="numeric" min={0} max={1000000000} step={1} placeholder="Např. 25000" required/></Field>{error&&<p className="p-error" role="alert">{errorMessage||error}</p>}<div className="m-form-actions"><button className="p-button" disabled={busy} type="submit"><Send size={17}/>{busy?'Odesílání…':'Odeslat nabídku'}</button><button type="button" className="m-text-button" disabled={busy} onClick={onClose}>Zrušit</button></div><p className="m-help">Poptávka se zároveň uloží mezi vaše leady a zákazníka najdete ve Zprávách.</p></form>}</dialog>;
+}

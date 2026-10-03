@@ -33,3 +33,25 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM job_applications').get().n,0);
   console.log('PASS: v1 migration preserves users, sessions, lists, campaigns, bot settings and suppressions; idempotency, foreign keys and multiple contexts');
 }finally{db.close();}
+
+
+const previous=new DatabaseSync(':memory:');
+try{
+  applyMigrations(previous,migrations.filter(m=>m.version<=3));
+  previous.exec(`
+    INSERT INTO users(id,email,password_hash,created_at) VALUES('customer-user','customer@example.test','hash','2026-01-01'),('provider-user','provider@example.test','hash','2026-01-01');
+    INSERT INTO accounts(id,type,name,created_at,completed_at) VALUES('customer','CUSTOMER','Customer','2026-01-01','2026-01-01'),('provider','SELF_EMPLOYED','Provider','2026-01-01','2026-01-01');
+    INSERT INTO customer_profiles VALUES('customer'); INSERT INTO provider_profiles(account_id) VALUES('provider');
+    INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at) VALUES('r1','customer','First','Description','stavebnictvi','Praha','praha','2026-01-01'),('r2','customer','Second','Description','auto-moto','Praha','praha','2026-01-02');
+    INSERT INTO leads(id,account_id,request_id,title,created_at,updated_at) VALUES('l1','provider','r1','First','2026-01-01','2026-01-01'),('l2','provider','r2','Second','2026-01-02','2026-01-02');
+    INSERT INTO messages VALUES('m1','r1','provider','customer-user','customer','Original customer message','2026-01-03'),('m2','r2','provider','provider-user','provider','Original supplier message','2026-01-04');
+  `);
+  const original=previous.prepare('SELECT * FROM messages ORDER BY id').all();
+  applyMigrations(previous,migrations);applyMigrations(previous,migrations);
+  assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM conversations').get().n,1);
+  assert.deepEqual(previous.prepare('SELECT id,request_id,provider_account_id,sender_user_id,sender_account_id,body,created_at FROM messages ORDER BY id').all(),original);
+  assert.equal(previous.prepare('SELECT COUNT(DISTINCT conversation_id) AS n FROM messages').get().n,1);
+  assert.equal(previous.prepare('SELECT updated_at FROM conversations').get().updated_at,'2026-01-04');
+  assert.equal(previous.prepare('PRAGMA foreign_key_check').all().length,0);
+  console.log('PASS: v3-to-v4 messenger migration preserves every message and merges multiple requests into one contact, idempotently');
+}finally{previous.close();}

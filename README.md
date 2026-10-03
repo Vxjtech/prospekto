@@ -143,3 +143,17 @@ Dokončený zákaznický účet může reagovat zprávou, telefonem a volitelný
 Migrace v3 pouze přidává tabulky job_postings a job_applications a jejich indexy. Předchozí účty a obchodní data zachovává. Koncept i publikovaný inzerát vyžadují vyplněné základní údaje a alespoň jeden kontakt. Datum platnosti je včetně uvedeného dne (UTC).
 
 Nabídky jsou vlastní obsah zaměstnavatelů v Prospektu. Není zapojený import, scraping ani synchronizace Jobs.cz a nejsou předvyplněné fiktivní inzeráty skutečných firem. Struktura připomíná běžný pracovní portál. Jednotlivý účet může spravovat nejvýše 500 inzerátů; přehled reakcí načítá posledních 1000 odpovědí.
+
+
+
+## Poptávky, přímé nabídky a messenger (v4)
+
+Poptávky mají dva explicitní režimy: Všechny poptávky a Doporučené pro vás. První neomezuje obor ani lokalitu podle profilu; druhý používá stávající párování. Vyhledávání, obor včetně podkategorií a kraj se kombinují na serveru před stránkováním po 20 záznamech. Přehled nadále ukazuje doporučené poptávky.
+
+Živnostník i firemní člen mohou poslat nabídku přímo z karty otevřené poptávky. Server v jedné transakci založí případný chybějící lead, uloží nabídku a připraví kontakt ve Zprávách. Uzavřené a již přidělené poptávky nabídky nepřijímají. Nabídky jsou dostupné v hlavní navigaci dodavatele, z leadů i přímo u poptávky.
+
+Messenger používá jednu konverzaci mezi dvěma účty, i když spolu řeší více poptávek. Má hledání kontaktů, přímé zprávy z veřejného profilu dodavatele, nepřečtené zprávy, průběžné načítání (4–5 sekund při otevřené kartě), chronologii a načítání starší historie po 50 zprávách. Enter odesílá, Shift + Enter vloží nový řádek. Na mobilu se přepíná seznam kontaktů a otevřený chat. Rozepsané zprávy zůstávají při přepnutí chatu v paměti stránky; po opuštění stránky se neukládají.
+
+Oprávnění se vždy ověřují proti aktivnímu účtu na serveru. Osobní účty nemají veřejný adresář: dodavatel může oslovit zákazníka ze svých leadů nebo existující konverzace. Veřejné dodavatelské účty lze oslovit přímo. Konverzace firem jsou společné jejím oprávněným členům. Přehled načítá posledních 500 konverzací, hledání nového kontaktu nejvýše 50 výsledků. Odesílání má limit 30 zpráv za minutu na účet; opakování stejného odeslání se stejným ID zprávu nezdvojí. Přílohy a e-mailová upozornění nejsou v této verzi.
+
+Migrace v4 přidává conversations a conversation_reads a převádí původní messages do společných konverzací. Zachovává ID, autora, text, čas i vazbu každé starší zprávy na poptávku; kopírování a výměna tabulky probíhají uvnitř stejné transakce. Před aktualizací zachovejte zálohu databáze dle postupu výše. Návrat ke kódu se schématem v3 vyžaduje obnovu odpovídající zálohy.
