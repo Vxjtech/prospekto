@@ -154,6 +154,8 @@ try {
   await page.locator('.m-chat-bubble').getByText('Úterý se mi hodí, děkuji.',{exact:true}).waitFor();
   await provider.locator('.m-chat-bubble').getByText('Úterý se mi hodí, děkuji.',{exact:true}).waitFor({timeout:12000});
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'messenger conversation fits mobile viewport');
+  await page.evaluate(()=>window.scrollTo(0,0));
+  check(await page.locator('.m-chat-composer').evaluate(el=>el.getBoundingClientRect().bottom<=window.innerHeight+1),'mobile message composer is visible without scrolling the page');
   await page.screenshot({path:'test-results/messenger-mobile.png',fullPage:true});
   await page.getByRole('button',{name:'Zpět na kontakty',exact:true}).click();
   await page.locator('.m-chat-contact').first().waitFor({state:'visible'});
