@@ -93,7 +93,7 @@ try {
   await provider.getByRole('heading',{name:'Oprava koupelny'}).waitFor();
   await provider.screenshot({path:'test-results/provider-desktop.png',fullPage:true});
   await provider.getByRole('button',{name:'Mám zájem o poptávku'}).click();
-  await provider.getByRole('status').filter({hasText:'Hotovo'}).waitFor();
+  await provider.getByRole('status').filter({hasText:'Poptávka je uložená'}).waitFor();
   await provider.goto(origin+'/dodavatel/crm/');
   check(await provider.locator('.m-pipeline article').count()===1,'interest appears in real CRM pipeline');
   await provider.setViewportSize({width:390,height:844});
@@ -104,6 +104,66 @@ try {
   const publicProfile=await context.request.get(origin+'/dodavatele/'+account.id+'/');
   check(publicProfile.ok()&&(await publicProfile.text()).includes('Novák rekonstrukce'),'completed provider profile is public');
   check(errors.length===0,'no uncaught browser errors: '+errors.join('; '));
+
+  // Direct offers, unrestricted filters and messenger should work through the visible UI.
+  const extraRequest=await context.request.post(origin+'/api/marketplace/',{headers:{origin},data:{action:'request',title:'Přezutí auta v Praze',description:'Potřebuji přezout všechna čtyři kola na zimní pneumatiky.',serviceId:'pneuservis',city:'Praha',region:'praha',budgetCzk:3000}});
+  check(extraRequest.ok(),'second request exists outside the provider profile');
+  await provider.setViewportSize({width:1440,height:1000});
+  await provider.goto(origin+'/dodavatel/poptavky/');
+  await provider.getByRole('heading',{name:'Přezutí auta v Praze',exact:true}).waitFor();
+  await provider.getByRole('button',{name:'Doporučené pro vás',exact:true}).click();
+  await provider.getByRole('status').filter({hasText:'Nalezeno poptávek: 1'}).waitFor();
+  check(await provider.getByRole('heading',{name:'Přezutí auta v Praze',exact:true}).count()===0,'recommendations exclude unmatched requests');
+  await provider.getByRole('button',{name:'Všechny poptávky',exact:true}).click();
+  await provider.getByLabel('Obor',{exact:true}).selectOption('auto-moto');
+  await provider.getByLabel('Kraj',{exact:true}).selectOption('praha');
+  await provider.getByRole('heading',{name:'Přezutí auta v Praze',exact:true}).waitFor();
+  await provider.getByRole('button',{name:'Poslat nabídku',exact:true}).click();
+  await provider.getByRole('dialog').waitFor();
+  await provider.getByLabel('Co zákazníkovi nabízíte?',{exact:true}).fill('Přezutí a vyvážení kol včetně kontroly tlaku.');
+  await provider.getByLabel('Celková nabízená cena v Kč',{exact:true}).fill('2800');
+  await provider.screenshot({path:'test-results/direct-offer-desktop.png',fullPage:true});
+  await provider.getByRole('button',{name:'Odeslat nabídku',exact:true}).click();
+  await provider.getByRole('dialog').waitFor({state:'hidden'});
+  await provider.getByRole('status').filter({hasText:'Nabídka byla odeslána'}).waitFor();
+  await page.goto(origin+'/zakaznik/nabidky/');
+  await page.getByText('Přezutí a vyvážení kol včetně kontroly tlaku.',{exact:true}).waitFor();
+  check(true,'self-employed provider sends an offer directly from request and customer receives it');
+  await provider.goto(origin+'/dodavatel/poptavky/');
+  await provider.getByRole('button',{name:'Doporučené pro vás',exact:true}).click();
+  await provider.getByRole('button',{name:'Zrušit filtry',exact:true}).click();
+  await provider.getByRole('heading',{name:'Přezutí auta v Praze',exact:true}).waitFor();
+  await provider.setViewportSize({width:390,height:844});
+  check(await provider.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'request filters fit mobile');
+  await provider.screenshot({path:'test-results/requests-mobile.png',fullPage:true});
+  await provider.setViewportSize({width:1440,height:1000});
+  await provider.goto(origin+'/dodavatel/zpravy/');
+  await provider.locator('.m-chat-contact').first().waitFor();
+  check(await provider.locator('.m-chat-contact').count()===1,'two requests from one customer produce one messenger contact');
+  await provider.locator('.m-chat-contact').first().click();
+  await provider.getByLabel('Zpráva',{exact:true}).fill('Dobrý den, mohu přijet v úterý dopoledne.');
+  await provider.getByRole('button',{name:'Odeslat zprávu',exact:true}).click();
+  await provider.locator('.m-chat-bubble').getByText('Dobrý den, mohu přijet v úterý dopoledne.',{exact:true}).waitFor();
+  await provider.screenshot({path:'test-results/messenger-desktop.png',fullPage:true});
+  await page.goto(origin+'/dodavatele/'+account.id+'/');
+  await page.getByRole('link',{name:'Napsat zprávu',exact:true}).click();
+  await page.waitForURL('**/zakaznik/zpravy/**');
+  await page.locator('.m-chat-bubble').getByText('Dobrý den, mohu přijet v úterý dopoledne.',{exact:true}).waitFor();
+  await page.getByLabel('Zpráva',{exact:true}).fill('Úterý se mi hodí, děkuji.');
+  await page.getByLabel('Zpráva',{exact:true}).press('Enter');
+  await page.locator('.m-chat-bubble').getByText('Úterý se mi hodí, děkuji.',{exact:true}).waitFor();
+  await provider.locator('.m-chat-bubble').getByText('Úterý se mi hodí, děkuji.',{exact:true}).waitFor({timeout:12000});
+  check(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'messenger conversation fits mobile viewport');
+  await page.screenshot({path:'test-results/messenger-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:'Zpět na kontakty',exact:true}).click();
+  await page.locator('.m-chat-contact').first().waitFor({state:'visible'});
+  await page.getByRole('button',{name:'Nová konverzace',exact:true}).click();
+  await page.getByLabel('Hledat kontakt',{exact:true}).fill('Novák');
+  await page.locator('.m-chat-contact').filter({hasText:'Novák rekonstrukce'}).waitFor();
+  await page.locator('.m-chat-contact').filter({hasText:'Novák rekonstrukce'}).click();
+  await page.locator('.m-chat-bubble').getByText('Úterý se mi hodí, děkuji.',{exact:true}).waitFor();
+  check(true,'mobile contact search opens the existing history without duplicate conversations');
+  check(errors.length===0,'offers, filters and messenger have no uncaught browser errors: '+errors.join('; '));
 
   await provider.setViewportSize({width:1440,height:1000});
   await provider.goto(origin+'/zamestnavatel/prace/');
@@ -143,3 +203,4 @@ try {
   await context.close();await providerContext.close();
 } catch(error){console.error(logs);throw error;}
 finally{if(browser)await browser.close();if(server.exitCode===null){const closed=once(server,'exit');server.kill('SIGTERM');await closed;}await rm(directory,{recursive:true,force:true});}
+

@@ -21,8 +21,11 @@ export type MarketRequest={id:string;title:string;description:string;serviceId:s
 export type Lead={id:string;requestId:string|null;title:string;contactName:string;stage:Stage;valueCzk:number;createdAt:string;updatedAt:string};
 export type Task={id:string;title:string;dueAt:string|null;done:number};
 export type Offer={id:string;requestId:string;providerId:string;providerName:string;requestTitle:string;body:string;amountCzk:number;status:string};
-export type Message={id:string;requestId:string;providerId:string;senderAccountId:string;senderName:string;body:string;createdAt:string};
+export type Message={id:string;requestId:string|null;providerId:string|null;senderAccountId:string;senderName:string;body:string;createdAt:string};
 export type Provider={id:string;name:string;description:string;city:string;avatarUrl:string;website:string;favorite:number;serviceNames:string};
-export type Thread={requestId:string;providerId:string;providerName:string;requestTitle:string};
+export type Thread={requestId:string;providerId:string;providerName:string;requestTitle:string;requestStatus:string;customerId:string;customerName:string};
 export type Review={id:string;rating:number;body:string;providerName:string};
 export type MarketplaceState={summary:{newLeads:number;activeLeads:number;offers:number;won:number;pipelineValue:number};requests:MarketRequest[];leads:Lead[];tasks:Task[];offers:Offer[];messages:Message[];providers:Provider[];threads:Thread[];reviews:Review[]};
+
+
+export type RequestFeed={items:MarketRequest[];total:number;page:number;pages:number};

@@ -185,4 +185,41 @@ CREATE TABLE job_applications (
 );
 CREATE INDEX job_applications_job ON job_applications(job_id,created_at);
 CREATE INDEX job_applications_customer ON job_applications(customer_account_id,created_at);
+`}, {version: 4, sql: `
+CREATE TABLE conversations(
+ id TEXT PRIMARY KEY, account_low TEXT NOT NULL REFERENCES accounts(id),
+ account_high TEXT NOT NULL REFERENCES accounts(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CHECK(account_low<account_high), UNIQUE(account_low,account_high)
+);
+CREATE INDEX conversations_low ON conversations(account_low,updated_at);
+CREATE INDEX conversations_high ON conversations(account_high,updated_at);
+-- Merge request-specific threads into one conversation per pair of accounts.
+INSERT INTO conversations(id,account_low,account_high,created_at,updated_at)
+ SELECT lower(hex(randomblob(16))),min(l.account_id,r.customer_account_id),max(l.account_id,r.customer_account_id),min(l.created_at),max(l.updated_at)
+ FROM leads l JOIN requests r ON r.id=l.request_id
+ WHERE l.account_id<>r.customer_account_id GROUP BY min(l.account_id,r.customer_account_id),max(l.account_id,r.customer_account_id);
+INSERT OR IGNORE INTO conversations(id,account_low,account_high,created_at,updated_at)
+ SELECT lower(hex(randomblob(16))),min(m.provider_account_id,r.customer_account_id),max(m.provider_account_id,r.customer_account_id),min(m.created_at),max(m.created_at)
+ FROM messages m JOIN requests r ON r.id=m.request_id
+ GROUP BY min(m.provider_account_id,r.customer_account_id),max(m.provider_account_id,r.customer_account_id);
+CREATE TABLE messages_v4(
+ id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id),
+ request_id TEXT REFERENCES requests(id), provider_account_id TEXT REFERENCES provider_profiles(account_id),
+ sender_user_id TEXT NOT NULL REFERENCES users(id), sender_account_id TEXT NOT NULL REFERENCES accounts(id),
+ body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+INSERT INTO messages_v4(id,conversation_id,request_id,provider_account_id,sender_user_id,sender_account_id,body,created_at)
+ SELECT m.id,c.id,m.request_id,m.provider_account_id,m.sender_user_id,m.sender_account_id,m.body,m.created_at
+ FROM messages m JOIN requests r ON r.id=m.request_id JOIN conversations c
+ ON c.account_low=min(m.provider_account_id,r.customer_account_id) AND c.account_high=max(m.provider_account_id,r.customer_account_id);
+DROP TABLE messages;
+ALTER TABLE messages_v4 RENAME TO messages;
+CREATE INDEX messages_thread ON messages(request_id,provider_account_id,created_at);
+CREATE INDEX messages_conversation ON messages(conversation_id,created_at,id);
+CREATE INDEX messages_sender ON messages(sender_account_id,created_at);
+UPDATE conversations SET updated_at=max(updated_at,COALESCE((SELECT max(created_at) FROM messages WHERE conversation_id=conversations.id),updated_at));
+CREATE TABLE conversation_reads(
+ conversation_id TEXT NOT NULL REFERENCES conversations(id),account_id TEXT NOT NULL REFERENCES accounts(id),
+ last_read_at TEXT NOT NULL, PRIMARY KEY(conversation_id,account_id)
+);
 `}];

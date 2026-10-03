@@ -198,8 +198,62 @@ try {
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'review',requestId,rating:5,body:'Again'}})).status===409,'duplicate reviews are rejected');
   await market(customer.cookie,{action:'favorite',providerId:aliceId,enabled:true});
   check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.providers.some(p=>p.id===aliceId&&p.favorite),'favorite supplier persists');
+  // All requests must be discoverable independently of the supplier profile.
+  const outside=await market(customer.cookie,{action:'request',title:'Výměna pneumatik v Praze',description:'Potřebuji přezout vůz a vyvážit kola.',serviceId:'pneuservis',city:'Praha',region:'praha',budgetCzk:3000});
+  const outsideId=outside.requests.find(r=>r.title==='Výměna pneumatik v Praze').id;
+  const feed=async query=>(await (await request('/api/marketplace/?'+query,{cookie:alice})).json());
+  check((await feed('scope=all')).items.some(r=>r.id===outsideId),'all requests include other services and regions');
+  check(!(await feed('scope=recommended')).items.some(r=>r.id===outsideId),'recommended requests remain matched to the profile');
+  const combined=await feed('scope=all&service=auto-moto&region=praha&q=vymena');
+  check(combined.total===1&&combined.items[0].id===outsideId,'category includes subcategories and combines with region and accent-insensitive search');
+  check((await request('/api/marketplace/?scope=all',{cookie:customer.cookie})).status===403,'customers cannot browse other customer requests');
+  const pagingDb=new DatabaseSync(filename),customerId=(await (await request('/api/accounts/',{cookie:customer.cookie})).json()).account.id;
+  const insertRequest=pagingDb.prepare('INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at) VALUES(?,?,?,?,?,?,?,?)');
+  for(let i=0;i<205;i++)insertRequest.run('feed-test-'+i,customerId,'Newer construction '+i,'Test request','stavebnictvi','Ostrava','moravskoslezsky','2099-01-01');
+  check((await feed('scope=all&service=auto-moto&region=praha')).items[0].id===outsideId,'filters run before limiting results, even beyond the first 200 requests');
+  const pageTwo=await feed('scope=all&page=2');check(pageTwo.page===2&&pageTwo.items.length===20&&pageTwo.total>200,'request browsing paginates on the server');
+  pagingDb.exec("DELETE FROM requests WHERE id LIKE 'feed-test-%'");pagingDb.close();
+  const directOffer=await market(alice,{action:'offer',requestId:outsideId,body:'Přezutí a vyvážení všech čtyř kol.',amountCzk:2800});
+  check(directOffer.leads.some(l=>l.requestId===outsideId&&l.stage==='OFFER'),'self-employed provider can send an offer directly without prior interest');
+  check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.offers.some(o=>o.requestId===outsideId&&o.amountCzk===2800),'customer receives the directly submitted offer');
+  await market(alice,{action:'interest',requestId:outsideId});
+  check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.leads.filter(l=>l.requestId===outsideId).length===1,'interest after an offer does not duplicate the lead');
+  check((await request('/api/marketplace/',{cookie:alice,body:{action:'offer',requestId,body:'Cannot reopen closed request',amountCzk:1}})).status===409,'closed requests still reject offers');
+
+  // Messenger supports direct contacts, preserves request conversations and enforces account isolation.
+  const chat=async(cookie,body)=>{const response=await request('/api/messenger/',{cookie,body});assert.equal(response.status,200,await response.clone().text());return response.json();};
+  const chats=async cookie=>(await (await request('/api/messenger/',{cookie})).json()).conversations;
+  const aliceChats=await chats(alice),conversationId=aliceChats[0].conversationId;
+  check(aliceChats.length===1&&aliceChats[0].id===customerId,'multiple requests share one messenger contact with the customer name');
+  const oldMessages=await (await request('/api/messenger/?conversationId='+conversationId,{cookie:alice})).json();
+  check(oldMessages.items.length===2&&oldMessages.items[0].body==='Rádi připravíme nabídku.','request messages appear chronologically in the messenger');
+  check((await request('/api/messenger/')).status===401,'anonymous messenger access is rejected');
+  for(const body of [{action:'send',conversationId,body:'Forged message',clientId:crypto.randomUUID()},{action:'read',conversationId,messageId:oldMessages.items[0].id}])check((await request('/api/messenger/',{cookie:bob,body})).status===404,'unrelated accounts cannot write or mark another conversation read');
+  check((await request('/api/messenger/?conversationId='+conversationId,{cookie:bob})).status===404,'unrelated accounts cannot read another conversation');
+  const strangerId=(await (await request('/api/accounts/',{cookie:stranger.cookie})).json()).account.id;
+  check((await request('/api/messenger/',{cookie:alice,body:{action:'start',contactId:strangerId}})).status===404,'private customers cannot be contacted without a relationship');
+  const candidates=(await (await request('/api/messenger/?scope=contacts',{cookie:alice})).json()).contacts;
+  check(candidates.some(c=>c.id===customerId)&&!candidates.some(c=>c.id===strangerId),'contact search includes related customers and excludes unrelated private accounts');
+  const bobId=(await (await request('/api/accounts/',{cookie:bob})).json()).account.id;
+  const direct=(await chat(customer.cookie,{action:'start',contactId:bobId})).conversationId;
+  check((await chat(customer.cookie,{action:'start',contactId:bobId})).conversationId===direct,'starting a direct provider conversation is idempotent and needs no request');
+  const message={action:'send',conversationId:direct,body:'Dobrý den, máte příští týden čas?',clientId:crypto.randomUUID()};
+  await chat(customer.cookie,message);await chat(customer.cookie,message);
+  check((await (await request('/api/messenger/?conversationId='+direct,{cookie:bob})).json()).items.length===1,'retrying a message does not send it twice');
+  check((await chats(bob)).find(c=>c.conversationId===direct).unread===1,'recipient sees unread message count');
+  await chat(bob,{action:'read',conversationId:direct,messageId:message.clientId});
+  check((await chats(bob)).find(c=>c.conversationId===direct).unread===0,'opening a message clears the recipient unread count');
+  check((await request('/api/messenger/',{cookie:customer.cookie,body:{...message,clientId:crypto.randomUUID()},extra:{origin:'https://other.example'}})).status===403,'messenger writes enforce same-origin');
+  const historyDb=new DatabaseSync(filename),sender=historyDb.prepare('SELECT id FROM users WHERE email=?').get('customer@example.test').id;
+  const insertMessage=historyDb.prepare('INSERT INTO messages(id,conversation_id,sender_user_id,sender_account_id,body,created_at) VALUES(?,?,?,?,?,?)');
+  for(let i=0;i<55;i++)insertMessage.run('history-'+String(i).padStart(3,'0'),direct,sender,customerId,'Older message '+i,'2020-01-01T00:00:00.000Z');
+  historyDb.close();
+  const latest=await (await request('/api/messenger/?conversationId='+direct,{cookie:bob})).json();
+  const olderMessages=await (await request('/api/messenger/?conversationId='+direct+'&before='+latest.nextCursor,{cookie:bob})).json();
+  check(latest.items.length===50&&olderMessages.items.length===6&&new Set([...latest.items,...olderMessages.items].map(m=>m.id)).size===56,'message pagination preserves older history without duplicates, including equal timestamps');
   const company=await createPerson('company@example.test','COMPANY');
   const unfinished=(await (await request('/api/accounts/',{cookie:company.cookie})).json()).account;
+  check((await request('/api/messenger/',{cookie:company.cookie})).status===403,'incomplete onboarding cannot access messenger');
   check(unfinished.role==='COMPANY_OWNER'&&unfinished.step===2,'company user becomes owner and resumes at business step');
   check((await request('/api/accounts/',{cookie:company.cookie,body:{action:'step',step:5,data:{}}})).status===409,'onboarding steps cannot be skipped');
   const relog=await request('/api/auth/login/',{body:{email:'company@example.test',password:'test-only-password-123'}});
@@ -290,3 +344,4 @@ try {
   console.log(`\n${checks} self-hosted integration checks passed.`);
 } catch (error) { console.error(logs); throw error; }
 finally { await stop(); await rm(directory, {recursive:true,force:true}); }
+
