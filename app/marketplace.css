@@ -49,3 +49,5 @@
 /* Keep the demo wallet readable beside long account names on narrow screens. */
 .m-topbar{flex-wrap:wrap;gap:14px}.m-topbar>.m-switcher{min-width:0}.m-switcher label{min-width:0;max-width:100%}.m-switcher select{max-width:100%}.m-credit-balance{white-space:nowrap}
 @media(max-width:600px){.m-topbar>.m-switcher{flex-basis:100%}.m-credit-balance{margin-top:2px}}
+
+.m-request-labels{display:flex;flex-wrap:wrap;gap:8px}.m-request-labels .p-badge{white-space:normal}

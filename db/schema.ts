@@ -244,4 +244,10 @@ UPDATE account_members SET role='COMPANY_OWNER' WHERE role='SELF_EMPLOYED'
 UPDATE accounts SET type='COMPANY' WHERE type='SELF_EMPLOYED';
 INSERT INTO company_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
  ON CONFLICT(account_id) DO NOTHING;
+`}, {version: 7, sql: `
+-- Requester capability is shared by private and business accounts. Existing foreign keys remain intact.
+INSERT INTO customer_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
+ ON CONFLICT(account_id) DO NOTHING;
+ALTER TABLE requests ADD COLUMN cooperation_type TEXT NOT NULL DEFAULT 'ONE_OFF'
+ CHECK(cooperation_type IN ('ONE_OFF','LONG_TERM'));
 `}];

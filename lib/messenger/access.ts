@@ -5,13 +5,10 @@ export const CHAT_PRICE=49;
 export function creditBalance(accountId:string){
   return query('SELECT COALESCE(SUM(amount),0) AS balance FROM credit_entries WHERE account_id=?',accountId).get<{balance:number}>()!.balance;
 }
-// A customer/provider pair shares one paid conversation across all requests.
+// One paid conversation per pair, even when two businesses exchange requester/provider roles.
 export function chatAccess(accountId:string,contactId:string){
-  const accounts=query('SELECT id,type FROM accounts WHERE id IN (?,?)',accountId,contactId).all<{id:string;type:string}>();
-  const customer=accounts.find(a=>a.type==='CUSTOMER'),provider=accounts.find(a=>a.type==='SELF_EMPLOYED'||a.type==='COMPANY');
-  if(!customer||!provider)return {allowed:true,accepted:true};
-  const accepted=!!query("SELECT 1 FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.provider_account_id=? AND r.customer_account_id=? AND o.status='ACCEPTED'",provider.id,customer.id).get();
-  const paid=!!query('SELECT 1 FROM chat_unlocks WHERE provider_account_id=? AND customer_account_id=?',provider.id,customer.id).get();
+  const accepted=accountId!==contactId&&!!query("SELECT 1 FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.status='ACCEPTED' AND ((o.provider_account_id=? AND r.customer_account_id=?) OR (o.provider_account_id=? AND r.customer_account_id=?))",accountId,contactId,contactId,accountId).get();
+  const paid=!!query('SELECT 1 FROM chat_unlocks WHERE (provider_account_id=? AND customer_account_id=?) OR (provider_account_id=? AND customer_account_id=?)',accountId,contactId,contactId,accountId).get();
   return {allowed:accepted&&paid,accepted};
 }
 export function assertChatAccess(accountId:string,contactId:string){
@@ -23,7 +20,7 @@ export function unlockChat(providerId:string,offerId:string){
   const offer=query("SELECT r.customer_account_id AS customerId,o.status FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.id=? AND o.provider_account_id=?",offerId,providerId).get<{customerId:string;status:string}>();
   if(!offer)throw new HttpError(404,'Nabídka nebyla nalezena.');
   if(offer.status!=='ACCEPTED')throw new HttpError(409,'Chat můžete odemknout až po přijetí nabídky zákazníkem.');
-  if(query('SELECT 1 FROM chat_unlocks WHERE provider_account_id=? AND customer_account_id=?',providerId,offer.customerId).get())return offer.customerId;
+  if(chatAccess(providerId,offer.customerId).allowed)return offer.customerId;
   if(creditBalance(providerId)<CHAT_PRICE)throw new HttpError(402,'Na odemknutí chatu potřebujete 49 kreditů. Nemáte dostatečný zůstatek.');
   const entryId=crypto.randomUUID(),now=new Date().toISOString();
   // The caller holds BEGIN IMMEDIATE: balance check, debit and unlock commit together.
