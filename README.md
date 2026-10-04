@@ -77,7 +77,7 @@ Pro zálohu zastavte aplikaci a zkopírujte celý datový adresář včetně př
 
 ## Účty
 
-Registrace začíná volbou zákazník / živnostník / firma. Člověk (users) je oddělený od účtu (accounts), členství a role (account_members) a veřejného profilu dodavatele. Hesla se ukládají jako solené scrypt hashe, session tokeny jako SHA-256 hashe. Cookies jsou HttpOnly, SameSite=Lax a na HTTPS také Secure; relace platí sedm dní. Server ověřuje uživatele a vlastníka uložených dat při každém požadavku. Identitní hlavičky z prohlížeče nejsou přihlašovacím mechanismem.
+Registrace začíná volbou osobní účet / účet na IČO. Firmy i živnostníci mají jednotné nastavení podnikání s povinným IČO a stejné funkce. Člověk (users) je oddělený od účtu (accounts), členství a role (account_members) a veřejného profilu dodavatele. Hesla se ukládají jako solené scrypt hashe, session tokeny jako SHA-256 hashe. Cookies jsou HttpOnly, SameSite=Lax a na HTTPS také Secure; relace platí sedm dní. Server ověřuje uživatele a vlastníka uložených dat při každém požadavku. Identitní hlavičky z prohlížeče nejsou přihlašovacím mechanismem.
 
 Existující účty této self-hosted verze zůstávají zachované. Migrace v2 zachová hesla, sessions, seznamy, kampaně, blokace a nastavení bota. Při dalším vstupu účty bez typu projdou výběrem a onboardingem. Účty z dřívějšího externího hostingu nejsou součástí této SQLite migrace. Ověřování e-mailových adres a samoobslužná obnova zapomenutého hesla zatím nejsou připojené. Přihlášení a registrace mají trvalé limity pokusů; aplikace neposílá registrační e-maily.
 
@@ -107,8 +107,8 @@ Vizuální styl Prospekta, písmo Manrope a zelená paleta zůstávají zachovan
 ## Marketplace účty a onboarding (v2)
 
 - **Zákazník:** /zakaznik/ — vlastní poptávky, nabídky, zprávy, hledání a oblíbení dodavatelé, recenze.
-- **Živnostník:** /dodavatel/ — relevantní poptávky, leady, CRM pipeline, nabídky, zakázky, úkoly, kalendář, profil a statistiky.
-- **Firma:** /firma/ — stejné dodavatelské funkce s odděleným účtem a členstvím týmu.
+- **Účet na IČO:** /dodavatel/ — poptávky, nabídky, CRM, zakázky, úkoly, kalendář, profil, statistiky a členové týmu. Staré odkazy /firma/ přesměrují na odpovídající stránku /dodavatel/.
+- Migrace v6 převede existující živnostníky na společný podnikatelský typ COMPANY a vlastníka COMPANY_OWNER. Zachová ID, profily, relace, nabídky, zprávy i kreditový zůstatek; nevytváří nový bonus. Staré API označení SELF_EMPLOYED je přijímáno jako alias COMPANY.
 - **Administrátor platformy:** /administrace/ — pouze pro users.platform_role = PLATFORM_ADMIN. Tuto roli nelze zadat registrací ani přes veřejné API.
 - /panel/ nyní pouze rozhoduje o správném prostředí. Původní databáze firem, seznamy, kampaně a bot jsou na /nastroje/ a jsou chráněné dodavatelskými oprávněními.
 - /onboarding/ ukládá každý dokončený krok. Při přihlášení se pokračuje tam, kde uživatel skončil. Před dokončením server nepovolí chráněné obchodní API.
@@ -154,7 +154,7 @@ Inzerát obsahuje název pozice, obor, zaměstnavatele, město/kraj/adresu, typy
 
 Katalog kombinuje hledání pozice/firmy/města, obor, kraj, druh spolupráce, práci na dálku, absolventy a minimální nabízenou měsíční mzdu. Mzdový filtr porovnává horní hranici uvedeného rozpětí (nebo jedinou zadanou částku); nabídky s jiným obdobím nebo bez mzdy do něj nezahrnuje. Stránkování má 20 záznamů.
 
-SELF_EMPLOYED, COMPANY_OWNER a COMPANY_ADMIN mohou vytvořit, upravit, zveřejnit a ukončit nabídku svého účtu. Koncepty, ukončené a prošlé nabídky nejsou veřejné. COMPANY_MEMBER nemůže upravovat nábor ani číst osobní údaje uchazečů.
+COMPANY_OWNER a COMPANY_ADMIN mohou vytvořit, upravit, zveřejnit a ukončit nabídku svého účtu. Koncepty, ukončené a prošlé nabídky nejsou veřejné. COMPANY_MEMBER nemůže upravovat nábor ani číst osobní údaje uchazečů.
 
 Dokončený zákaznický účet může reagovat zprávou, telefonem a volitelným HTTPS odkazem na životopis. E-mail je převzatý z přihlášeného účtu. Reakce vidí pouze příslušný uchazeč a oprávnění správci zaměstnavatele. Přehled zákazníka je na /moje-reakce/. Jedna reakce na nabídku a zákaznický účet; žádné automatické e-maily se neodesílají.
 

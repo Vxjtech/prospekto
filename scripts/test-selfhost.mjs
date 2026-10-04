@@ -57,6 +57,9 @@ async function register(email, name) {
   const cookie=setCookie.split(';')[0];
   check((await response.json()).redirectTo==='/onboarding/','provider starts in onboarding');
   check((await request('/api/panel/',{cookie})).status===403,'incomplete onboarding blocks provider tools');
+  const unified=(await (await request('/api/accounts/',{cookie})).json()).account;
+  check(unified.type==='COMPANY'&&unified.role==='COMPANY_OWNER','legacy registration alias creates the unified IČO account');
+  check((await request('/api/accounts/',{cookie,body:{action:'step',step:2,data:{ico:'',businessName:'Test',address:'Test',billingAddress:'Test'}}})).status===400,'business onboarding requires IČO');
   await completeOnboarding(cookie);
   return cookie;
 }
@@ -286,8 +289,9 @@ try {
   check((await relog.json()).redirectTo==='/onboarding/','unfinished onboarding resumes after a new login');
   await completeOnboarding(company.cookie);
   const companyId=(await (await request('/api/accounts/',{cookie:company.cookie})).json()).account.id;
+  check((await request('/firma/zpravy/?conversation=test',{cookie:company.cookie})).headers.get('location')==='/dodavatel/zpravy/?conversation=test','old company URL preserves section and chat query');
   const companyLogin=await request('/api/auth/login/',{body:{email:'company@example.test',password:'test-only-password-123'}});
-  check((await companyLogin.json()).redirectTo==='/firma/','finished company login reaches company dashboard');
+  check((await companyLogin.json()).redirectTo==='/dodavatel/','finished company login reaches company dashboard');
 
   // Recruitment is separate from supplier requests and scoped to the employer account.
   const vacancy={title:'Stavbyvedoucí',category:'construction',city:'Ostrava',region:'moravskoslezsky',address:'Hlavní 1',

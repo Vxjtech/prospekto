@@ -12,7 +12,7 @@ export function requireAccount(user:User,kind?:'customer'|'provider',complete=tr
   const account=getContext(user).account;
   if(!account?.type) throw new HttpError(403,'Nejdříve vyberte typ účtu.');
   if(complete&&!account.completedAt) throw new HttpError(403,'Nejdříve dokončete nastavení Prospekto.');
-  const valid=account.type==='CUSTOMER'?account.role==='CUSTOMER':account.type==='SELF_EMPLOYED'?account.role==='SELF_EMPLOYED':['COMPANY_OWNER','COMPANY_ADMIN','COMPANY_MEMBER'].includes(account.role??'');
+  const valid=account.type==='CUSTOMER'?account.role==='CUSTOMER':['COMPANY_OWNER','COMPANY_ADMIN','COMPANY_MEMBER'].includes(account.role??'');
   if(!valid) throw new HttpError(403,'Nemáte oprávnění k tomuto účtu.');
   if(kind==='customer'&&account.type!=='CUSTOMER'||kind==='provider'&&account.type==='CUSTOMER') throw new HttpError(403,'Tato funkce není dostupná pro váš typ účtu.');
   return account;

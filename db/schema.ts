@@ -237,4 +237,11 @@ INSERT INTO credit_entries(id,account_id,amount,reason,idempotency_key,created_a
  SELECT 'demo-grant:'||id,id,100000,'DEMO_GRANT','demo-grant:'||id,strftime('%Y-%m-%dT%H:%M:%fZ','now')
  FROM accounts WHERE type IN ('SELF_EMPLOYED','COMPANY')
  ON CONFLICT(idempotency_key) DO NOTHING;
+`}, {version: 6, sql: `
+-- Unify business accounts in place; IDs, profiles, sessions and credits remain unchanged.
+UPDATE account_members SET role='COMPANY_OWNER' WHERE role='SELF_EMPLOYED'
+ AND account_id IN (SELECT id FROM accounts WHERE type='SELF_EMPLOYED');
+UPDATE accounts SET type='COMPANY' WHERE type='SELF_EMPLOYED';
+INSERT INTO company_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
+ ON CONFLICT(account_id) DO NOTHING;
 `}];
