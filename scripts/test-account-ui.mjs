@@ -31,7 +31,7 @@ try {
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(origin+'/registrace/');
   await page.getByRole('heading',{name:'Jak chcete Prospekto používat?'}).waitFor();
-  check(await page.locator('.m-type-card').count()===3,'registration presents three account types');
+  check(await page.locator('.m-type-card').count()===2,'registration presents personal and unified IČO accounts');
   await page.screenshot({path:'test-results/registration-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'registration fits mobile viewport');
@@ -62,7 +62,7 @@ try {
   const provider=await providerContext.newPage();
   provider.on('pageerror',error=>errors.push(error.message));
   await provider.goto(origin+'/registrace/');
-  await provider.getByRole('button',{name:'Pokračovat jako živnostník'}).click();
+  await provider.getByRole('button',{name:'Registrovat se na IČO'}).click();
   await provider.getByLabel('Jméno',{exact:true}).fill('Petr');
   await provider.getByLabel('Příjmení',{exact:true}).fill('Novák');
   await provider.getByLabel('E-mail',{exact:true}).fill('ui-provider@example.test');
@@ -80,10 +80,10 @@ try {
   await provider.getByLabel('Hlavní obor',{exact:true}).selectOption('stavebnictvi');
   await provider.getByLabel('Rekonstrukce',{exact:true}).check();
   await provider.getByRole('button',{name:'Uložit a pokračovat'}).click();
-  await provider.getByLabel('Město',{exact:true}).fill('Ostrava');
+  await provider.getByLabel('Výchozí lokalita',{exact:true}).fill('Ostrava');
   await provider.getByLabel('Moravskoslezský kraj',{exact:true}).check();
   await provider.getByRole('button',{name:'Uložit a pokračovat'}).click();
-  await provider.getByLabel('Popis',{exact:true}).fill('Provádíme kvalitní rekonstrukce koupelen.');
+  await provider.getByLabel('Představení podnikání',{exact:true}).fill('Provádíme kvalitní rekonstrukce koupelen.');
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII=','base64');
   await provider.getByLabel('Profilová fotografie / logo').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:png});
   await provider.locator('.m-media-preview img').waitFor();
@@ -219,4 +219,3 @@ try {
   await context.close();await providerContext.close();
 } catch(error){console.error(logs);throw error;}
 finally{if(browser)await browser.close();if(server.exitCode===null){const closed=once(server,'exit');server.kill('SIGTERM');await closed;}await rm(directory,{recursive:true,force:true});}
-

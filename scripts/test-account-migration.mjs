@@ -57,3 +57,31 @@ try{
   assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM chat_unlocks').get().n,0);
   console.log('PASS: v3-to-v4 messenger migration preserves every message and merges multiple requests into one contact, idempotently');
 }finally{previous.close();}
+
+const business=new DatabaseSync(':memory:');
+try {
+  applyMigrations(business,migrations.filter(m=>m.version<=5));
+  business.exec(`
+    INSERT INTO users(id,email,password_hash,created_at) VALUES('solo-user','solo@example.test','hash','now'),('team-user','team@example.test','hash','now');
+    INSERT INTO accounts(id,type,name,created_at,completed_at,onboarding_step) VALUES('solo','SELF_EMPLOYED','Solo','now','done',5),('team','COMPANY','Team','now','done',5);
+    INSERT INTO account_members VALUES('solo','solo-user','SELF_EMPLOYED','now'),('team','team-user','COMPANY_OWNER','now');
+    INSERT INTO provider_profiles(account_id,ico,business_name) VALUES('solo','12345678','Solo'),('team','87654321','Team');
+    INSERT INTO company_profiles(account_id,founded_year,references_text) VALUES('team',2000,'Existing references');
+    INSERT INTO sessions VALUES('solo-session','solo-user',9999999999999,'solo');
+    INSERT INTO credit_entries(id,account_id,amount,reason,idempotency_key,created_at) VALUES('balance','solo',99951,'TEST','balance','now');
+  `);
+  const credits=business.prepare('SELECT * FROM credit_entries').all();
+  const profiles=business.prepare('SELECT * FROM provider_profiles ORDER BY account_id').all();
+  const sessions=business.prepare('SELECT * FROM sessions').all();
+  applyMigrations(business,migrations);applyMigrations(business,migrations);
+  assert.equal(business.prepare("SELECT type FROM accounts WHERE id='solo'").get().type,'COMPANY');
+  assert.equal(business.prepare("SELECT role FROM account_members WHERE account_id='solo'").get().role,'COMPANY_OWNER');
+  assert.equal(business.prepare("SELECT completed_at FROM accounts WHERE id='solo'").get().completed_at,'done');
+  assert.equal(business.prepare('SELECT COUNT(*) AS n FROM company_profiles').get().n,2);
+  assert.equal(business.prepare("SELECT references_text FROM company_profiles WHERE account_id='team'").get().references_text,'Existing references');
+  assert.deepEqual(business.prepare('SELECT * FROM credit_entries').all(),credits);
+  assert.deepEqual(business.prepare('SELECT * FROM provider_profiles ORDER BY account_id').all(),profiles);
+  assert.deepEqual(business.prepare('SELECT * FROM sessions').all(),sessions);
+  assert.equal(business.prepare('PRAGMA foreign_key_check').all().length,0);
+  console.log('PASS: v6 unifies business accounts in place, preserves profiles, sessions and balances, and is idempotent');
+}finally{business.close();}
