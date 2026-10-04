@@ -185,7 +185,7 @@ try {
   await provider.goto(origin+'/zamestnavatel/prace/');
   await provider.getByRole('button',{name:'+ Přidat pracovní nabídku',exact:true}).click();
   await provider.getByLabel('Název pracovní pozice',{exact:true}).fill('Stavbyvedoucí testovací pozice');
-  await provider.getByLabel('Výchozí lokalita',{exact:true}).fill('Ostrava');
+  await provider.getByLabel('Město',{exact:true}).fill('Ostrava');
   await provider.getByLabel('Kraj',{exact:true}).selectOption('moravskoslezsky');
   await provider.getByLabel('Mzda od (Kč)',{exact:true}).fill('50000');
   await provider.getByLabel('Mzda do (Kč)',{exact:true}).fill('70000');
@@ -219,4 +219,3 @@ try {
   await context.close();await providerContext.close();
 } catch(error){console.error(logs);throw error;}
 finally{if(browser)await browser.close();if(server.exitCode===null){const closed=once(server,'exit');server.kill('SIGTERM');await closed;}await rm(directory,{recursive:true,force:true});}
-
