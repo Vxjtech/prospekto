@@ -40,6 +40,7 @@ export function selectType(userId:string,id:string,type:AccountType) {
   if(type==='CUSTOMER') query('INSERT INTO customer_profiles(account_id) VALUES(?)',id).run();
   else {
     query('INSERT INTO provider_profiles(account_id) VALUES(?)',id).run();
+    query('INSERT INTO credit_entries(id,account_id,amount,reason,idempotency_key,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING','demo-grant:'+id,id,100000,'DEMO_GRANT','demo-grant:'+id,new Date().toISOString()).run();
     if(type==='COMPANY') query('INSERT INTO company_profiles(account_id) VALUES(?)',id).run();
   }
 }

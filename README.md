@@ -1,5 +1,23 @@
 # Prospekto — vlastní Node.js server
 
+## Nabídky zdarma a odemknutí chatu (v5, aktuální chování)
+
+Leady jsou sloučené do Nabídek. Samostatná položka Leady už není v navigaci a staré adresy `/dodavatel/leady/` a `/firma/leady/` přesměrují na Nabídky. CRM nyní přehledně zobrazuje odeslané, přijaté a nepřijaté nabídky; zakázky vycházejí z přijatých nabídek. Staré záznamy v databázi se nemažou.
+
+1. Firma nebo živnostník pošle nabídku přímo z poptávky **zdarma**.
+2. Zákazník nabídku přijme. Před přijetím není možné zahájit zákaznický chat.
+3. Dodavatel klikne na **Odemknout chat · 49 kreditů**. Jednorázově se odečte 49 kreditů a zpřístupní se společná konverzace oběma stranám.
+4. Další zprávy i další přijaté nabídky mezi stejnou dvojicí účtů jsou bez dalšího poplatku. Zákazník neplatí.
+
+Pro demo dostane každý podnikatelský účet při výběru typu **100 000 kreditů**. Migrace v5 přidělí stejný jednorázový bonus i existujícím firmám a živnostníkům. Opakovaný start, přihlášení, úprava profilu ani přidání firemního člena bonus neopakují. Firma sdílí zůstatek a odemknutí napříč členy. Kreditový zůstatek je vidět v záhlaví i přehledu.
+
+Jde o demo kreditovou bránu, nikoliv reálné karetní platby nebo dobíjení. Před komerčním provozem je nutné demo bonus vypnout a doplnit skutečné dobíjení. Přímá B2B komunikace mezi podnikatelskými účty není touto zákaznickou bránou zpoplatněna.
+
+Server kontroluje přijatou nabídku a odemknutí při každém odeslání, včetně původního marketplace API i messengeru. Kontrola zůstatku, odečet a odemknutí jsou součástí jedné databázové transakce. Opakované či souběžné odemknutí neúčtuje podruhé; nedostatek kreditů nic neodemkne. Existující historie zpráv zůstává čitelná, ale další zákaznické zprávy podléhají novým pravidlům.
+
+Nasazení: zazálohujte databázi, aktualizujte kód, spusťte `npm ci` a `npm run build`, potom restartujte aplikaci. Zachovejte `DATABASE_PATH`. Migrace v5 přidává `chat_unlocks`, index účetních zápisů a jednorázové demo bonusy. Aktuální main používá SQLite; tato změna databázový engine nemění. Starší popisy v2–v4 níže dokumentují předchozí vývoj; u nabídek a chatu platí pravidla v5 výše.
+
+
 Samostatná aplikace v Next.js a Reactu. Obsahuje landing page, veřejné demo, registraci e-mailem a heslem a soukromý panel. Cloudflare, D1, Workers, Wrangler, Vinext ani přihlášení přes ChatGPT nejsou potřeba.
 
 ## Rychlé spuštění
