@@ -5,6 +5,7 @@ import {requireAccount} from '@/lib/accounts/store';
 import {HttpError} from '@/lib/http';
 import {z} from 'zod';
 import {CZECH_REGIONS,normalizeSearch} from '@/lib/company-types';
+import {creditBalance,chatAccess,unlockChat} from '@/lib/messenger/access';
 import {ensureConversation,sendMessage} from '@/lib/messenger/store';
 import type {marketplaceAction,MarketplaceState,MarketRequest,Lead,Task,Offer,Message,Provider,Thread,Review} from './model';
 const requestColumns='r.id,r.title,r.description,r.service_id AS serviceId,r.city,r.region,r.status,r.budget_czk AS budgetCzk,r.created_at AS createdAt';
@@ -38,7 +39,7 @@ export function marketState(user:User):MarketplaceState {
   const requests=customer?query('SELECT '+requestColumns+' FROM requests r WHERE r.customer_account_id=? ORDER BY r.created_at DESC LIMIT 200',id).all<MarketRequest>():relevant(id);
   const leads=customer?[]:query('SELECT id,request_id AS requestId,title,contact_name AS contactName,stage,value_czk AS valueCzk,created_at AS createdAt,updated_at AS updatedAt FROM leads WHERE account_id=? ORDER BY updated_at DESC LIMIT 500',id).all<Lead>();
   const tasks=customer?[]:query('SELECT id,title,due_at AS dueAt,done FROM tasks WHERE account_id=? ORDER BY done,due_at,created_at DESC LIMIT 500',id).all<Task>();
-  const offers=query('SELECT o.id,o.request_id AS requestId,o.provider_account_id AS providerId,a.name AS providerName,r.title AS requestTitle,o.body,o.amount_czk AS amountCzk,o.status FROM offers o JOIN requests r ON r.id=o.request_id JOIN accounts a ON a.id=o.provider_account_id WHERE '+(customer?'r.customer_account_id':'o.provider_account_id')+'=? ORDER BY o.created_at DESC LIMIT 500',id).all<Offer>();
+  const offers=query('SELECT o.id,o.request_id AS requestId,o.provider_account_id AS providerId,a.name AS providerName,r.title AS requestTitle,o.body,o.amount_czk AS amountCzk,o.status,r.customer_account_id AS customerId FROM offers o JOIN requests r ON r.id=o.request_id JOIN accounts a ON a.id=o.provider_account_id WHERE '+(customer?'r.customer_account_id':'o.provider_account_id')+'=? ORDER BY o.created_at DESC LIMIT 500',id).all<Offer & {customerId:string}>().map(({customerId,...offer})=>({...offer,chatUnlocked:chatAccess(offer.providerId,customerId).allowed}));
   const messages=query('SELECT m.id,m.request_id AS requestId,m.provider_account_id AS providerId,m.sender_account_id AS senderAccountId,a.name AS senderName,m.body,m.created_at AS createdAt FROM messages m JOIN conversations c ON c.id=m.conversation_id JOIN accounts a ON a.id=m.sender_account_id WHERE c.account_low=? OR c.account_high=? ORDER BY m.created_at DESC,m.id DESC LIMIT 500',id,id).all<Message>();
   const providers=customer?query("SELECT a.id,a.name,p.description,COALESCE(s.city,'') AS city,p.avatar_url AS avatarUrl,p.website,"+
     ' EXISTS(SELECT 1 FROM favorites f WHERE f.provider_account_id=a.id AND f.customer_account_id=?) AS favorite,'+
@@ -47,7 +48,7 @@ export function marketState(user:User):MarketplaceState {
   const threads=query('SELECT l.request_id AS requestId,l.account_id AS providerId,a.name AS providerName,r.title AS requestTitle,r.status AS requestStatus,r.customer_account_id AS customerId,ca.name AS customerName FROM leads l JOIN requests r ON r.id=l.request_id JOIN accounts a ON a.id=l.account_id JOIN accounts ca ON ca.id=r.customer_account_id WHERE '+(customer?'r.customer_account_id':'l.account_id')+'=? ORDER BY l.updated_at DESC LIMIT 500',id).all<Thread>();
   const reviews=query('SELECT v.id,v.rating,v.body,a.name AS providerName FROM reviews v JOIN accounts a ON a.id=v.provider_account_id WHERE '+(customer?'v.customer_account_id':'v.provider_account_id')+'=? ORDER BY v.created_at DESC LIMIT 200',id).all<Review>();
   const summary=customer?{newLeads:0,activeLeads:0,offers:offers.length,won:0,pipelineValue:0}:query("SELECT COUNT(CASE WHEN stage='NEW' THEN 1 END) AS newLeads,COUNT(CASE WHEN stage NOT IN ('WON','LOST') THEN 1 END) AS activeLeads,(SELECT COUNT(*) FROM offers WHERE provider_account_id=?) AS offers,COUNT(CASE WHEN stage='WON' THEN 1 END) AS won,COALESCE(SUM(CASE WHEN stage NOT IN ('WON','LOST') THEN value_czk ELSE 0 END),0) AS pipelineValue FROM leads WHERE account_id=?",id,id).get<MarketplaceState['summary']>()!;
-  return {summary,requests,leads,tasks,offers,messages,providers,threads,reviews};
+  return {credits:creditBalance(id),summary,requests,leads,tasks,offers,messages,providers,threads,reviews};
 }
 export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) {
   const customerActions=['request','close-request','accept-offer','review','favorite'];
@@ -64,7 +65,6 @@ export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) 
       limit('leads');
       query('INSERT INTO leads(id,account_id,request_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)',crypto.randomUUID(),id,requestId,r.title,now,now).run();
     }
-    ensureConversation(id,r.customer_account_id);
     return r;
   };
   if(input.action==='request'){
@@ -74,8 +74,7 @@ export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) 
   if(input.action==='close-request'){
     if(!query("UPDATE requests SET status='CLOSED' WHERE id=? AND customer_account_id=?",input.id,id).run().changes)throw new HttpError(404,'Poptávka nebyla nalezena.');
   }
-  if(input.action==='interest')ensureLead(input.requestId);
-  if(input.action==='lead'){limit('leads');query('INSERT INTO leads(id,account_id,title,contact_name,value_czk,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',crypto.randomUUID(),id,input.title,input.contactName,input.valueCzk,now,now).run();}
+  if(input.action==='interest'||input.action==='lead')throw new HttpError(410,'Leady byly sloučeny s Nabídkami. Pošlete nabídku zdarma přímo z poptávky.');
   if(input.action==='stage'){
     if(!query('UPDATE leads SET stage=?,updated_at=? WHERE id=? AND account_id=?',input.stage,now,input.id,id).run().changes)throw new HttpError(404,'Lead nebyl nalezen.');
   }
@@ -96,6 +95,7 @@ export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) 
     query("UPDATE requests SET status='ASSIGNED' WHERE id=?",o.request_id).run();
     query("UPDATE leads SET stage=CASE WHEN account_id=? THEN 'WON' ELSE 'LOST' END,updated_at=? WHERE request_id=?",o.provider_account_id,now,o.request_id).run();
   }
+  if(input.action==='unlock-chat')ensureConversation(id,unlockChat(id,input.id));
   if(input.action==='message'){
     const r=existingRequest(input.requestId);
     if(account.type==='CUSTOMER'?r.customer_account_id!==id:input.providerId!==id)throw new HttpError(404,'Konverzace nebyla nalezena.');

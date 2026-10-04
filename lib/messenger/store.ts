@@ -1,5 +1,6 @@
 import 'server-only';
 import {query} from '@/db';
+import {assertChatAccess,chatAccess} from './access';
 import {requireAccount} from '@/lib/accounts/store';
 import type {User} from '@/lib/auth';
 import {HttpError} from '@/lib/http';
@@ -27,11 +28,11 @@ export function conversationList(user:User){
     ' LEFT JOIN conversation_reads cr ON cr.conversation_id=c.id AND cr.account_id=? WHERE c.account_low=? OR c.account_high=? ORDER BY c.updated_at DESC,c.id DESC LIMIT 500',id,id,id,id,id).all<Conversation>();
 }
 export function contacts(user:User,search:string){
-  const id=requireAccount(user).id;
-  // Customers are discoverable only through an existing lead or conversation, never a public customer directory.
+  const account=requireAccount(user),id=account.id;
+  // Customers are discoverable only through an accepted offer or conversation, never a public customer directory.
   const match=search.trim().slice(0,100).normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
   return query('SELECT '+contactColumns+' FROM accounts a'+joins+
-    " WHERE a.id<>? AND a.completed_at IS NOT NULL AND (instr(normalize_text(a.name),?)>0 OR instr(normalize_text(s.city),?)>0) AND (p.account_id IS NOT NULL OR EXISTS(SELECT 1 FROM leads l JOIN requests r ON r.id=l.request_id WHERE l.account_id=? AND r.customer_account_id=a.id) OR EXISTS(SELECT 1 FROM conversations c WHERE (c.account_low=? AND c.account_high=a.id) OR (c.account_high=? AND c.account_low=a.id))) ORDER BY a.name,a.id LIMIT 50",id,match,match,id,id,id).all<Contact>();
+    " WHERE a.id<>? AND a.completed_at IS NOT NULL AND (instr(normalize_text(a.name),?)>0 OR instr(normalize_text(s.city),?)>0) AND (p.account_id IS NOT NULL OR EXISTS(SELECT 1 FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.provider_account_id=? AND o.status='ACCEPTED' AND r.customer_account_id=a.id) OR EXISTS(SELECT 1 FROM conversations c WHERE (c.account_low=? AND c.account_high=a.id) OR (c.account_high=? AND c.account_low=a.id))) AND (?<>'CUSTOMER' OR EXISTS(SELECT 1 FROM offers o JOIN requests r ON r.id=o.request_id WHERE r.customer_account_id=? AND o.provider_account_id=a.id AND o.status='ACCEPTED')) ORDER BY a.name,a.id LIMIT 50",id,match,match,id,id,id,account.type,id).all<Contact>();
 }
 export function messagePage(user:User,conversationId:string,before?:string):ChatPage{
   const id=requireAccount(user).id;participant(id,conversationId);
@@ -39,10 +40,14 @@ export function messagePage(user:User,conversationId:string,before?:string):Chat
   if(before&&!cursor)throw new HttpError(400,'Neplatná stránka zpráv.');
   const rows=query('SELECT m.id,m.sender_account_id AS senderAccountId,a.name AS senderName,m.body,m.created_at AS createdAt,r.title AS requestTitle FROM messages m JOIN accounts a ON a.id=m.sender_account_id LEFT JOIN requests r ON r.id=m.request_id WHERE m.conversation_id=?'+
     (cursor?' AND (m.created_at<? OR (m.created_at=? AND m.id<?))':'')+' ORDER BY m.created_at DESC,m.id DESC LIMIT 51',conversationId,...(cursor?[cursor.created_at,cursor.created_at,cursor.id]:[])).all<ChatMessage>();
-  const more=rows.length>50,items=rows.slice(0,50).reverse();return {items,nextCursor:more?items[0].id:null};
+  const pair=query('SELECT account_low,account_high FROM conversations WHERE id=?',conversationId).get<{account_low:string;account_high:string}>()!;
+  const access=chatAccess(id,pair.account_low===id?pair.account_high:pair.account_low);
+  const more=rows.length>50,items=rows.slice(0,50).reverse();return {items,nextCursor:more?items[0].id:null,canSend:access.allowed,accepted:access.accepted};
 }
 export function sendMessage(user:User,conversationId:string,body:string,clientId:string,requestId:string|null=null,providerId:string|null=null){
   const account=requireAccount(user),id=account.id;participant(id,conversationId);
+  const pair=query('SELECT account_low,account_high FROM conversations WHERE id=?',conversationId).get<{account_low:string;account_high:string}>()!;
+  assertChatAccess(id,pair.account_low===id?pair.account_high:pair.account_low);
   const existing=query('SELECT conversation_id,sender_account_id,body FROM messages WHERE id=?',clientId).get<{conversation_id:string;sender_account_id:string;body:string}>();
   if(existing){if(existing.conversation_id!==conversationId||existing.sender_account_id!==id||existing.body!==body)throw new HttpError(409,'Zprávu nelze odeslat s tímto identifikátorem.');return;}
   if(query('SELECT COUNT(*) AS n FROM messages WHERE sender_account_id=?',id).get<{n:number}>()!.n>=10000)throw new HttpError(409,'Dosáhli jste limitu zpráv.');
@@ -54,8 +59,10 @@ export function sendMessage(user:User,conversationId:string,body:string,clientId
 export function messengerWrite(user:User,input:z.infer<typeof messengerAction>){
   const id=requireAccount(user).id;
   if(input.action==='start'){
-    const contact=query('SELECT a.id FROM accounts a LEFT JOIN provider_profiles p ON p.account_id=a.id WHERE a.id=? AND a.completed_at IS NOT NULL AND (p.account_id IS NOT NULL OR EXISTS(SELECT 1 FROM leads l JOIN requests r ON r.id=l.request_id WHERE l.account_id=? AND r.customer_account_id=a.id) OR EXISTS(SELECT 1 FROM conversations c WHERE (c.account_low=? AND c.account_high=a.id) OR (c.account_high=? AND c.account_low=a.id)))',input.contactId,id,id,id).get();
+    const contact=query('SELECT a.id FROM accounts a LEFT JOIN provider_profiles p ON p.account_id=a.id WHERE a.id=? AND a.completed_at IS NOT NULL AND (p.account_id IS NOT NULL OR EXISTS(SELECT 1 FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.provider_account_id=? AND o.status=\'ACCEPTED\' AND r.customer_account_id=a.id) OR EXISTS(SELECT 1 FROM conversations c WHERE (c.account_low=? AND c.account_high=a.id) OR (c.account_high=? AND c.account_low=a.id)))',input.contactId,id,id,id).get();
     if(!contact)throw new HttpError(404,'Kontakt není dostupný.');
+    const access=chatAccess(id,input.contactId);
+    if(!access.accepted)throw new HttpError(403,'Nejdříve musí zákazník přijmout nabídku. Přejděte do Nabídek.');
     return ensureConversation(id,input.contactId);
   }
   participant(id,input.conversationId);

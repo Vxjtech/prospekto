@@ -222,4 +222,19 @@ CREATE TABLE conversation_reads(
  conversation_id TEXT NOT NULL REFERENCES conversations(id),account_id TEXT NOT NULL REFERENCES accounts(id),
  last_read_at TEXT NOT NULL, PRIMARY KEY(conversation_id,account_id)
 );
+`}, {version: 5, sql: `
+CREATE INDEX credit_entries_account ON credit_entries(account_id);
+CREATE TABLE chat_unlocks(
+ provider_account_id TEXT NOT NULL REFERENCES accounts(id),
+ customer_account_id TEXT NOT NULL REFERENCES accounts(id),
+ offer_id TEXT NOT NULL REFERENCES offers(id),
+ credit_entry_id TEXT NOT NULL UNIQUE REFERENCES credit_entries(id),
+ created_at TEXT NOT NULL,
+ PRIMARY KEY(provider_account_id,customer_account_id)
+);
+-- One demo grant per business account, including existing demo accounts.
+INSERT INTO credit_entries(id,account_id,amount,reason,idempotency_key,created_at)
+ SELECT 'demo-grant:'||id,id,100000,'DEMO_GRANT','demo-grant:'||id,strftime('%Y-%m-%dT%H:%M:%fZ','now')
+ FROM accounts WHERE type IN ('SELF_EMPLOYED','COMPANY')
+ ON CONFLICT(idempotency_key) DO NOTHING;
 `}];

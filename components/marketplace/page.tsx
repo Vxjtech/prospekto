@@ -13,6 +13,7 @@ export async function AccountPage({type,section}:{type:AccountType;section:strin
   if(context.platformAdmin||!account?.completedAt||account.type!==type)redirect(destination(context));
   requireAccount(user);
   const view=section[0]??'prehled';
+  if(type!=='CUSTOMER'&&view==='leady'&&section.length===1)redirect(destination(context)+'nabidky/');
   const allowed=type==='CUSTOMER'?['prehled','poptavky','nova-poptavka','nabidky','zpravy','dodavatele','oblibeni','recenze','nastaveni']:['prehled','poptavky','leady','crm','zpravy','zakazky','kalendar','profil','statistiky','nastaveni','nabidky'];
   if(section.length>1||!allowed.includes(view))notFound();
   const team=type==='COMPANY'&&canManage(account.role)?query('SELECT p.name,u.email,m.role FROM account_members m JOIN users u ON u.id=m.user_id LEFT JOIN profiles p ON p.id=u.id WHERE m.account_id=? ORDER BY m.created_at',account.id).all<{name:string;email:string;role:string}>():[];

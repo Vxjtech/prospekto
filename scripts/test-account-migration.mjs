@@ -53,5 +53,7 @@ try{
   assert.equal(previous.prepare('SELECT COUNT(DISTINCT conversation_id) AS n FROM messages').get().n,1);
   assert.equal(previous.prepare('SELECT updated_at FROM conversations').get().updated_at,'2026-01-04');
   assert.equal(previous.prepare('PRAGMA foreign_key_check').all().length,0);
+  assert.equal(previous.prepare("SELECT SUM(amount) AS n FROM credit_entries WHERE account_id='provider'").get().n,100000);
+  assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM chat_unlocks').get().n,0);
   console.log('PASS: v3-to-v4 messenger migration preserves every message and merges multiple requests into one contact, idempotently');
 }finally{previous.close();}

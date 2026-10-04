@@ -8,4 +8,4 @@ export const messengerAction=z.discriminatedUnion('action',[
 export type Contact={id:string;name:string;type:string;avatarUrl:string;city:string};
 export type Conversation=Contact&{conversationId:string;lastMessage:string;updatedAt:string;unread:number};
 export type ChatMessage={id:string;senderAccountId:string;senderName:string;body:string;createdAt:string;requestTitle:string|null};
-export type ChatPage={items:ChatMessage[];nextCursor:string|null};
+export type ChatPage={canSend:boolean;accepted:boolean;items:ChatMessage[];nextCursor:string|null};
