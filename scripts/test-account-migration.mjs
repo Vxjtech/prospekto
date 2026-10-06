@@ -82,6 +82,12 @@ try {
   assert.deepEqual(business.prepare('SELECT * FROM credit_entries').all(),credits);
   assert.deepEqual(business.prepare('SELECT * FROM provider_profiles ORDER BY account_id').all(),profiles);
   assert.deepEqual(business.prepare('SELECT * FROM sessions').all(),sessions);
+  business.prepare('INSERT INTO calendar_subscriptions(account_id,token,created_at) VALUES(?,?,?)').run('solo','private-calendar-token','now');
+  assert.equal(business.prepare('SELECT account_id FROM calendar_subscriptions WHERE token=?').get('private-calendar-token').account_id,'solo');
+  assert.throws(()=>business.prepare('INSERT INTO calendar_subscriptions(account_id,token,created_at) VALUES(?,?,?)').run('solo','second-token','now'));
+  assert.throws(()=>business.prepare('INSERT INTO calendar_subscriptions(account_id,token,created_at) VALUES(?,?,?)').run('missing','missing-token','now'));
+  applyMigrations(business,migrations);
+  assert.equal(business.prepare('SELECT token FROM calendar_subscriptions WHERE account_id=?').get('solo').token,'private-calendar-token');
   assert.equal(business.prepare('PRAGMA foreign_key_check').all().length,0);
-  console.log('PASS: v6 unifies business accounts in place, preserves profiles, sessions and balances, and is idempotent');
+  console.log('PASS: v6 unifies business accounts in place and v7 adds account-scoped calendar subscriptions; preserves profiles, sessions and balances, and is idempotent');
 }finally{business.close();}

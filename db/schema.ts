@@ -244,4 +244,10 @@ UPDATE account_members SET role='COMPANY_OWNER' WHERE role='SELF_EMPLOYED'
 UPDATE accounts SET type='COMPANY' WHERE type='SELF_EMPLOYED';
 INSERT INTO company_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
  ON CONFLICT(account_id) DO NOTHING;
+`}, {version: 7, sql: `
+CREATE TABLE calendar_subscriptions(
+ account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ token TEXT NOT NULL UNIQUE,
+ created_at TEXT NOT NULL
+);
 `}];
