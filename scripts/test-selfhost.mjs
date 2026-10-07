@@ -142,6 +142,22 @@ try {
   const privateResponse = await request('/api/companies/', {cookie: alice});
   const privateData = await privateResponse.json();
   check(privateResponse.headers.get('cache-control').includes('no-store') && privateData.items.every(item => item.email && item.phone), 'authenticated contacts are complete and not publicly cached');
+  check((await request('/api/calendar/subscribe/')).status===401,'calendar subscriptions require an authenticated provider');
+  const subscription=await request('/api/calendar/subscribe/',{cookie:alice});
+  const subscriptionLocation=subscription.headers.get('location')??'';
+  const tokenMatch=subscriptionLocation.match(/^webcal:\/\/configured\.example\/api\/calendar\/feed\/([A-Za-z0-9_-]{43})\/$/);
+  check(subscription.status===302&&!!tokenMatch&&subscription.headers.get('cache-control')?.includes('no-store'),`provider can subscribe with a private Apple Calendar feed URL (${subscription.status}: ${subscriptionLocation})`);
+  const repeatedSubscription=await request('/api/calendar/subscribe/',{cookie:alice});
+  check(repeatedSubscription.headers.get('location')===subscriptionLocation,'repeated subscription setup preserves the existing feed URL');
+  check((await request(`/api/calendar/feed/${tokenMatch?.[1]}/`)).status===200,'Apple Calendar feed is readable using its private subscription URL');
+  await market(alice,{action:'task',title:'Call, important; follow-up',dueAt:'2026-10-06T09:30:00.000Z'});
+  const calendarFeed=await request(`/api/calendar/feed/${tokenMatch?.[1]}/`);
+  const calendarText=await calendarFeed.text();
+  check(calendarFeed.headers.get('content-type')?.startsWith('text/calendar')&&calendarFeed.headers.get('cache-control')?.includes('no-store')&&calendarText.includes('SUMMARY:Call\\, important\\; follow-up')&&calendarText.includes('DTSTART:20261006T093000Z'),'calendar feed publishes scheduled tasks with escaped text and UTC event times');
+  check(!calendarText.includes('END:VCALENDAR\r\nBEGIN:VEVENT'),'calendar feed is a valid single account calendar');
+  const bobSubscription=await request('/api/calendar/subscribe/',{cookie:bob}),bobToken=bobSubscription.headers.get('location')?.match(/\/feed\/([A-Za-z0-9_-]{43})\/$/)?.[1];
+  const bobFeed=await request(`/api/calendar/feed/${bobToken}/`);
+  check(!!bobToken&&bobToken!==tokenMatch?.[1]&&!(await bobFeed.text()).includes('Call, important'),'calendar feeds remain isolated between provider accounts');
   check((await request('/panel/',{cookie:alice})).headers.get('location')==='/dodavatel/','legacy panel entry resolves to provider dashboard');
   const panelResponse = await request('/nastroje/', {cookie: alice});
   const panelHtml = await panelResponse.text();
@@ -311,8 +327,13 @@ try {
   check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,salaryMax:1}}})).status===400,'invalid salary ranges are rejected');
   check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,companyName:'DEK'}}})).status===400,'employer name cannot be spoofed in vacancy payload');
   check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}})).status===200,'employer can publish a draft');
+  const publicJobsPage=await request('/prace/?q=Stavbyvedouc%C3%AD&category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000');
+  const publicJobsHtml=await publicJobsPage.text();
+  check(publicJobsPage.status===200&&publicJobsHtml.includes('Stavbyvedoucí')&&publicJobsHtml.includes('Hledat práci'),'anonymous visitors can search public jobs without registration');
+  const homePage=await (await request('/')).text();
+  check(homePage.includes('href="/prace/"')&&homePage.includes('Pracovní nabídky'),'main website navigation links directly to public job search');
   const jobData=await (await request('/api/jobs/?category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000')).json();
-  check(jobData.total===1&&jobData.items[0].companyName==='Test business','combined job filters and authoritative employer name work');
+  check(jobData.total===1&&jobData.items[0].companyName==='Test business','combined anonymous job filters and authoritative employer name work');
   check((await (await request('/api/jobs/?salary=80000')).json()).total===0,'monthly salary filter excludes lower offers');
   check((await (await request('/api/jobs/?mode=REMOTE')).json()).total===0,'work mode filter works');
   check((await (await request('/api/jobs/?graduates=1')).json()).total===0,'graduate filter works');
@@ -425,4 +446,3 @@ try {
   console.log(`\n${checks} self-hosted integration checks passed.`);
 } catch (error) { console.error(logs); throw error; }
 finally { await stop(); await rm(directory, {recursive:true,force:true}); }
-

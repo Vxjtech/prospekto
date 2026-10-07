@@ -148,7 +148,7 @@ Spusťte npm run build, npm run typecheck, npm test. GitHub workflow Verify Pros
 
 ## Pracovní nabídky (schéma v3)
 
-Pracovní pozice tvoří samostatnou sekci /prace/, oddělenou od zákaznických poptávek. Zaměstnavatelé spravují inzeráty na /zamestnavatel/prace/. Název firmy a IČO se odvozují od aktivního podnikatelského účtu; nelze je podvrhnout v inzerátu.
+Pracovní pozice tvoří veřejnou sekci /prace/, oddělenou od zákaznických poptávek a dostupnou z hlavní navigace. Vyhledávání, filtry i detail nabídky fungují bez registrace; účet zákazníka je potřeba pouze pro interní odeslání reakce v Prospektu. Zaměstnavatelé spravují inzeráty na /zamestnavatel/prace/. Název firmy a IČO se odvozují od aktivního podnikatelského účtu; nelze je podvrhnout v inzerátu.
 
 Inzerát obsahuje název pozice, obor, zaměstnavatele, město/kraj/adresu, typy spolupráce, režim práce, hrubou mzdu nebo odměnu v Kč od–do za hodinu/měsíc/rok, představení, náplň práce, požadavky, benefity, vzdělání, praxi, jazyky, vhodnost pro absolventy/OZP, nástup, kontakt a platnost. Webový detail obsahuje JSON-LD JobPosting.
 
@@ -172,6 +172,8 @@ Poptávky mají dva explicitní režimy: Všechny poptávky a Doporučené pro v
 
 Messenger používá jednu konverzaci mezi dvěma účty, i když spolu řeší více poptávek. Má hledání kontaktů, přímé zprávy z veřejného profilu dodavatele, nepřečtené zprávy, průběžné načítání (4–5 sekund při otevřené kartě), chronologii a načítání starší historie po 50 zprávách. Enter odesílá, Shift + Enter vloží nový řádek. Na mobilu se přepíná seznam kontaktů a otevřený chat. Rozepsané zprávy zůstávají při přepnutí chatu v paměti stránky; po opuštění stránky se neukládají.
 
+Kalendář dodavatele zobrazuje naplánované úkoly po dnech. Tlačítko Přidat do Apple Calendaru otevře potvrzení odběru soukromého kalendáře Prospekta; po potvrzení se úkoly průběžně aktualizují bez dalšího stahování. Apple zařízení musí mít přístup k veřejné HTTPS adrese aplikace nastavené v `APP_URL`. Odkaz odběru je soukromý přístup k datům kalendáře. Odběr aktualizujte přibližně každých 15 minut podle podpory aplikace Kalendář.
+
 Oprávnění se vždy ověřují proti aktivnímu účtu na serveru. Osobní účty nemají veřejný adresář: dodavatel může oslovit zákazníka ze svých leadů nebo existující konverzace. Veřejné dodavatelské účty lze oslovit přímo. Konverzace firem jsou společné jejím oprávněným členům. Přehled načítá posledních 500 konverzací, hledání nového kontaktu nejvýše 50 výsledků. Odesílání má limit 30 zpráv za minutu na účet; opakování stejného odeslání se stejným ID zprávu nezdvojí. Přílohy a e-mailová upozornění nejsou v této verzi.
 
 Migrace v4 přidává conversations a conversation_reads a převádí původní messages do společných konverzací. Zachovává ID, autora, text, čas i vazbu každé starší zprávy na poptávku; kopírování a výměna tabulky probíhají uvnitř stejné transakce. Před aktualizací zachovejte zálohu databáze dle postupu výše. Návrat ke kódu se schématem v3 vyžaduje obnovu odpovídající zálohy.
@@ -183,6 +185,6 @@ Migrace v4 přidává conversations a conversation_reads a převádí původní 
 
 U každé poptávky je automatické označení Soukromá osoba (CUSTOMER) nebo Firma (COMPANY, včetně živnostníků). Klient nemůže podvrhnout zadavatele ani jeho typ. Poptávka může být Jednorázová zakázka nebo Dlouhodobá spolupráce na IČO; vyhledávání kombinuje typ spolupráce a zadavatele s oborem, krajem a textem.
 
-Migrace v7 přidává zadavatelský profil i existujícím podnikatelským účtům bez změny jejich ID, rolí či kreditů; nové účty jej získávají automaticky. Původní poptávky jsou jednorázové a jejich data zůstávají zachována. Firma může přijmout nabídku, dokončit vlastní poptávku, hodnotit dodavatele a uložit si ho do oblíbených. Oprávnění se kontrolují podle vlastníka poptávky; členové jednoho účtu sdílejí jeho data.
+Migrace v8 přidává zadavatelský profil i existujícím podnikatelským účtům bez změny jejich ID, rolí či kreditů; nové účty jej získávají automaticky. Původní poptávky jsou jednorázové a jejich data zůstávají zachována. Firma může přijmout nabídku, dokončit vlastní poptávku, hodnotit dodavatele a uložit si ho do oblíbených. Oprávnění se kontrolují podle vlastníka poptávky; členové jednoho účtu sdílejí jeho data.
 
 Chat mezi dvěma firmami má stejná pravidla jako se soukromou osobou: zadavatel přijme nabídku, dodavatel odemkne chat za 49 kreditů. Zadavatel neplatí. Jednou odemčený chat je společný pro dvojici účtů i při pozdější výměně jejich rolí. Bez přijetí nabídky a odemčení nelze platební bránu obejít přímou zprávou ani veřejným profilem.

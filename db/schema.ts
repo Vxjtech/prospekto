@@ -245,6 +245,12 @@ UPDATE accounts SET type='COMPANY' WHERE type='SELF_EMPLOYED';
 INSERT INTO company_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
  ON CONFLICT(account_id) DO NOTHING;
 `}, {version: 7, sql: `
+CREATE TABLE calendar_subscriptions(
+ account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ token TEXT NOT NULL UNIQUE,
+ created_at TEXT NOT NULL
+);
+`}, {version: 8, sql: `
 -- Requester capability is shared by private and business accounts. Existing foreign keys remain intact.
 INSERT INTO customer_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
  ON CONFLICT(account_id) DO NOTHING;
