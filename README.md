@@ -177,3 +177,14 @@ Kalendář dodavatele zobrazuje naplánované úkoly po dnech. Tlačítko Přida
 Oprávnění se vždy ověřují proti aktivnímu účtu na serveru. Osobní účty nemají veřejný adresář: dodavatel může oslovit zákazníka ze svých leadů nebo existující konverzace. Veřejné dodavatelské účty lze oslovit přímo. Konverzace firem jsou společné jejím oprávněným členům. Přehled načítá posledních 500 konverzací, hledání nového kontaktu nejvýše 50 výsledků. Odesílání má limit 30 zpráv za minutu na účet; opakování stejného odeslání se stejným ID zprávu nezdvojí. Přílohy a e-mailová upozornění nejsou v této verzi.
 
 Migrace v4 přidává conversations a conversation_reads a převádí původní messages do společných konverzací. Zachovává ID, autora, text, čas i vazbu každé starší zprávy na poptávku; kopírování a výměna tabulky probíhají uvnitř stejné transakce. Před aktualizací zachovejte zálohu databáze dle postupu výše. Návrat ke kódu se schématem v3 vyžaduje obnovu odpovídající zálohy.
+
+
+## Univerzální účet na IČO
+
+Účet na IČO nabízí služby i zadává poptávky bez přepínání účtu. Hledat zakázky slouží k odesílání nabídek; Moje poptávky a Nabídky k poptávkám slouží k zadávání a výběru dodavatele. Odeslané a obdržené nabídky se nemíchají. Vlastní poptávky nejsou ve vyhledávání zakázek a server zakazuje nabídku na vlastní poptávku.
+
+U každé poptávky je automatické označení Soukromá osoba (CUSTOMER) nebo Firma (COMPANY, včetně živnostníků). Klient nemůže podvrhnout zadavatele ani jeho typ. Poptávka může být Jednorázová zakázka nebo Dlouhodobá spolupráce na IČO; vyhledávání kombinuje typ spolupráce a zadavatele s oborem, krajem a textem.
+
+Migrace v8 přidává zadavatelský profil i existujícím podnikatelským účtům bez změny jejich ID, rolí či kreditů; nové účty jej získávají automaticky. Původní poptávky jsou jednorázové a jejich data zůstávají zachována. Firma může přijmout nabídku, dokončit vlastní poptávku, hodnotit dodavatele a uložit si ho do oblíbených. Oprávnění se kontrolují podle vlastníka poptávky; členové jednoho účtu sdílejí jeho data.
+
+Chat mezi dvěma firmami má stejná pravidla jako se soukromou osobou: zadavatel přijme nabídku, dodavatel odemkne chat za 49 kreditů. Zadavatel neplatí. Jednou odemčený chat je společný pro dvojici účtů i při pozdější výměně jejich rolí. Bez přijetí nabídky a odemčení nelze platební bránu obejít přímou zprávou ani veřejným profilem.

@@ -216,6 +216,71 @@ try {
   await page.getByRole('heading',{name:'Stavbyvedoucí testovací pozice',exact:true}).waitFor();
   check(errors.length===0,'job UI has no uncaught browser errors: '+errors.join('; '));
 
+
+  // The same IČO account posts a request and receives offers without changing accounts.
+  await provider.goto(origin+'/dodavatel/nova-poptavka/');
+  await provider.getByLabel('Typ spolupráce',{exact:true}).selectOption('LONG_TERM');
+  await provider.getByLabel('Název poptávky',{exact:true}).fill('Dlouhodobý partner na rekonstrukce');
+  await provider.getByLabel('Co potřebujete?',{exact:true}).fill('Hledáme spolehlivého partnera na IČO pro pravidelnou spolupráci.');
+  await provider.getByLabel('Služba',{exact:true}).selectOption('rekonstrukce');
+  await provider.getByLabel('Město',{exact:true}).fill('Ostrava');
+  await provider.getByLabel('Kraj',{exact:true}).selectOption('moravskoslezsky');
+  await provider.getByRole('button',{name:'Zveřejnit poptávku',exact:true}).click();
+  await provider.getByRole('status').filter({hasText:'poptávka je zveřejněná'}).waitFor();
+  await provider.getByRole('link',{name:'Přejít na moje poptávky →',exact:true}).click();
+  const ownCard=provider.locator('article').filter({hasText:'Dlouhodobý partner na rekonstrukce'});
+  await ownCard.getByText('Firma',{exact:true}).waitFor();
+  await ownCard.getByText('Dlouhodobá spolupráce na IČO',{exact:true}).waitFor();
+  check(await ownCard.getByRole('button',{name:'Poslat nabídku zdarma',exact:true}).count()===0,'own business request displays issuer and cooperation type without self-offer action');
+  await provider.setViewportSize({width:390,height:844});
+  check(await provider.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'business requests fit mobile');
+  await provider.screenshot({path:'test-results/business-requests-mobile.png',fullPage:true});
+  const partnerContext=await browser.newContext({viewport:{width:390,height:844}});
+  const partner=await partnerContext.newPage();partner.on('pageerror',error=>errors.push(error.message));
+  const setup=async(path,data)=>{const response=await partnerContext.request.post(origin+path,{headers:{origin},data});check(response.ok(),'partner setup '+path);return response.json();};
+  await setup('/api/auth/register/',{accountType:'COMPANY',firstName:'Karel',lastName:'Partner',phone:'+420777444333',email:'ui-partner@example.test',password:'ui-test-password-123'});
+  for(const [step,data] of [
+    [2,{ico:'87654321',businessName:'Partner služby',address:'Ostrava 2',billingAddress:'Ostrava 2'}],
+    [3,{primaryServiceId:'stavebnictvi',serviceIds:['rekonstrukce'],specializations:[]}],
+    [4,{city:'Ostrava',postalCode:'70030',regions:['moravskoslezsky'],cities:[],nationwide:false,maxDistanceKm:40}],
+    [5,{}],
+  ])await setup('/api/accounts/',{action:'step',step,data});
+  await partner.goto(origin+'/dodavatel/poptavky/');
+  await partner.getByRole('heading',{name:'Dlouhodobý partner na rekonstrukce',exact:true}).waitFor();
+  await partner.getByLabel('Zadavatel',{exact:true}).selectOption('CUSTOMER');
+  await partner.getByRole('heading',{name:'Oprava koupelny',exact:true}).waitFor();
+  await partner.locator('article').filter({hasText:'Oprava koupelny'}).getByText('Soukromá osoba',{exact:true}).waitFor();
+  await partner.getByLabel('Zadavatel',{exact:true}).selectOption('COMPANY');
+  await partner.getByLabel('Typ spolupráce',{exact:true}).selectOption('LONG_TERM');
+  const businessCard=partner.locator('article').filter({hasText:'Dlouhodobý partner na rekonstrukce'});
+  await businessCard.getByText('Firma',{exact:true}).waitFor();
+  check(await partner.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'issuer and cooperation filters fit mobile');
+  await partner.screenshot({path:'test-results/business-search-mobile.png',fullPage:true});
+  await businessCard.getByRole('button',{name:'Poslat nabídku zdarma',exact:true}).click();
+  await partner.getByLabel('Co zákazníkovi nabízíte?',{exact:true}).fill('Máme kapacitu pro dlouhodobou spolupráci na IČO.');
+  await partner.getByLabel('Celková nabízená cena v Kč',{exact:true}).fill('60000');
+  await partner.getByRole('button',{name:'Odeslat nabídku zdarma',exact:true}).click();
+  await partner.getByRole('dialog').waitFor({state:'hidden'});
+  await provider.goto(origin+'/dodavatel/prijate-nabidky/');
+  await provider.getByRole('button',{name:'Přijmout nabídku',exact:true}).click();
+  await provider.getByText('Čekáme, až dodavatel odemkne chat. Pro vás je komunikace zdarma.',{exact:true}).waitFor();
+  await partner.goto(origin+'/dodavatel/nabidky/');
+  await partner.getByRole('button',{name:'Odemknout chat · 49 kreditů',exact:true}).click();
+  await partner.waitForURL('**/dodavatel/zpravy/**');
+  await partner.getByLabel('Zpráva',{exact:true}).fill('Můžeme začít od pondělí.');
+  await partner.getByRole('button',{name:'Odeslat zprávu',exact:true}).click();
+  await partner.locator('.m-chat-bubble').getByText('Můžeme začít od pondělí.',{exact:true}).waitFor();
+  await provider.reload();
+  await provider.getByRole('button',{name:'Napsat dodavateli →',exact:true}).click();
+  await provider.locator('.m-chat-bubble').getByText('Můžeme začít od pondělí.',{exact:true}).waitFor();
+  await provider.getByLabel('Zpráva',{exact:true}).fill('Děkujeme, spolupráci potvrzujeme.');
+  await provider.getByRole('button',{name:'Odeslat zprávu',exact:true}).click();
+  await partner.locator('.m-chat-bubble').getByText('Děkujeme, spolupráci potvrzujeme.',{exact:true}).waitFor();
+  check((await (await providerContext.request.get(origin+'/api/marketplace/')).json()).state.credits===99951,'business requester does not pay for the new incoming chat');
+  check((await (await partnerContext.request.get(origin+'/api/marketplace/')).json()).state.credits===99951,'business supplier pays 49 credits exactly once');
+  check(errors.length===0,'universal business flow has no browser errors: '+errors.join('; '));
+  await partnerContext.close();
+
   await context.close();await providerContext.close();
 } catch(error){console.error(logs);throw error;}
 finally{if(browser)await browser.close();if(server.exitCode===null){const closed=once(server,'exit');server.kill('SIGTERM');await closed;}await rm(directory,{recursive:true,force:true});}

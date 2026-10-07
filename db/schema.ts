@@ -250,4 +250,10 @@ CREATE TABLE calendar_subscriptions(
  token TEXT NOT NULL UNIQUE,
  created_at TEXT NOT NULL
 );
+`}, {version: 8, sql: `
+-- Requester capability is shared by private and business accounts. Existing foreign keys remain intact.
+INSERT INTO customer_profiles(account_id) SELECT id FROM accounts WHERE type='COMPANY'
+ ON CONFLICT(account_id) DO NOTHING;
+ALTER TABLE requests ADD COLUMN cooperation_type TEXT NOT NULL DEFAULT 'ONE_OFF'
+ CHECK(cooperation_type IN ('ONE_OFF','LONG_TERM'));
 `}];

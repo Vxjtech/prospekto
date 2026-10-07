@@ -37,8 +37,8 @@ export function selectType(userId:string,id:string,type:AccountType) {
   const ready=!!person?.firstName&&!!person.lastName&&(type==='CUSTOMER'||!!person.phone);
   query('UPDATE accounts SET type=?,onboarding_step=?,completed_at=? WHERE id=?',type,ready?(type==='CUSTOMER'?5:2):1,ready&&type==='CUSTOMER'?new Date().toISOString():null,id).run();
   query('UPDATE account_members SET role=? WHERE account_id=? AND user_id=?',type==='COMPANY'?'COMPANY_OWNER':type,id,userId).run();
-  if(type==='CUSTOMER') query('INSERT INTO customer_profiles(account_id) VALUES(?)',id).run();
-  else {
+  query('INSERT INTO customer_profiles(account_id) VALUES(?)',id).run();
+  if(type!=='CUSTOMER') {
     query('INSERT INTO provider_profiles(account_id) VALUES(?)',id).run();
     query('INSERT INTO credit_entries(id,account_id,amount,reason,idempotency_key,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING','demo-grant:'+id,id,100000,'DEMO_GRANT','demo-grant:'+id,new Date().toISOString()).run();
     if(type==='COMPANY') query('INSERT INTO company_profiles(account_id) VALUES(?)',id).run();

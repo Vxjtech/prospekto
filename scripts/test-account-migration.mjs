@@ -91,3 +91,25 @@ try {
   assert.equal(business.prepare('PRAGMA foreign_key_check').all().length,0);
   console.log('PASS: v6 unifies business accounts in place and v7 adds account-scoped calendar subscriptions; preserves profiles, sessions and balances, and is idempotent');
 }finally{business.close();}
+
+const universal=new DatabaseSync(':memory:');
+try {
+  applyMigrations(universal,migrations.filter(m=>m.version<=7));
+  universal.exec(`
+    INSERT INTO accounts(id,type,name,created_at) VALUES('person','CUSTOMER','Person','now'),('business','COMPANY','Business','now');
+    INSERT INTO customer_profiles VALUES('person');
+    INSERT INTO provider_profiles(account_id) VALUES('business');
+    INSERT INTO calendar_subscriptions VALUES('business','existing-token','now');
+    INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at) VALUES('existing','person','Existing request','Original description','stavebnictvi','Praha','praha','now');
+    INSERT INTO credit_entries VALUES('credits','business',12345,'TEST','credits','now');
+  `);
+  applyMigrations(universal,migrations);applyMigrations(universal,migrations);
+  assert.equal(universal.prepare("SELECT token FROM calendar_subscriptions WHERE account_id='business'").get().token,'existing-token');
+  assert.equal(universal.prepare('SELECT COUNT(*) AS n FROM customer_profiles').get().n,2);
+  assert.equal(universal.prepare("SELECT cooperation_type FROM requests WHERE id='existing'").get().cooperation_type,'ONE_OFF');
+  assert.equal(universal.prepare("SELECT description FROM requests WHERE id='existing'").get().description,'Original description');
+  assert.equal(universal.prepare('SELECT SUM(amount) AS n FROM credit_entries').get().n,12345);
+  universal.exec("INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at,cooperation_type) VALUES('new','business','New business request','Long-term work','stavebnictvi','Praha','praha','now','LONG_TERM')");
+  assert.equal(universal.prepare('PRAGMA foreign_key_check').all().length,0);
+  console.log('PASS: v8 enables existing business requesters without changing requests or credit balances');
+}finally{universal.close();}
