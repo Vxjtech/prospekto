@@ -256,4 +256,95 @@ INSERT INTO customer_profiles(account_id) SELECT id FROM accounts WHERE type='CO
  ON CONFLICT(account_id) DO NOTHING;
 ALTER TABLE requests ADD COLUMN cooperation_type TEXT NOT NULL DEFAULT 'ONE_OFF'
  CHECK(cooperation_type IN ('ONE_OFF','LONG_TERM'));
+`}, {version: 9, sql: `
+CREATE TABLE request_images(
+ request_id TEXT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+ media_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+ position INTEGER NOT NULL CHECK(position BETWEEN 0 AND 4),
+ PRIMARY KEY(request_id,media_id),
+ UNIQUE(request_id,position)
+);
+CREATE INDEX request_images_media ON request_images(media_id);
+`}, {version: 10, sql: `
+-- Conversations and paid access are scoped to one request and one provider.
+CREATE TABLE conversations_v10(
+ id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
+ provider_account_id TEXT NOT NULL REFERENCES accounts(id),
+ account_low TEXT NOT NULL REFERENCES accounts(id), account_high TEXT NOT NULL REFERENCES accounts(id),
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CHECK(account_low<account_high), UNIQUE(request_id,provider_account_id)
+);
+CREATE TABLE message_routes_v10 AS
+ SELECT m.id,
+  COALESCE(m.request_id,o.request_id) AS request_id,
+  COALESCE(m.provider_account_id,o.provider_account_id) AS provider_account_id
+ FROM messages m
+ JOIN conversations oldc ON oldc.id=m.conversation_id
+ LEFT JOIN chat_unlocks u ON (u.provider_account_id=oldc.account_low AND u.customer_account_id=oldc.account_high)
+   OR (u.provider_account_id=oldc.account_high AND u.customer_account_id=oldc.account_low)
+ LEFT JOIN offers o ON o.id=u.offer_id;
+INSERT OR IGNORE INTO conversations_v10(id,request_id,provider_account_id,account_low,account_high,created_at,updated_at)
+ SELECT lower(hex(randomblob(16))),r.id,route.provider_account_id,
+  min(route.provider_account_id,r.customer_account_id),max(route.provider_account_id,r.customer_account_id),
+  min(m.created_at),max(m.created_at)
+ FROM message_routes_v10 route
+ JOIN messages m ON m.id=route.id
+ JOIN requests r ON r.id=route.request_id
+ WHERE route.provider_account_id IS NOT NULL
+ GROUP BY r.id,route.provider_account_id;
+INSERT OR IGNORE INTO conversations_v10(id,request_id,provider_account_id,account_low,account_high,created_at,updated_at)
+ SELECT lower(hex(randomblob(16))),r.id,o.provider_account_id,
+  min(o.provider_account_id,r.customer_account_id),max(o.provider_account_id,r.customer_account_id),
+  u.created_at,u.created_at
+ FROM chat_unlocks u
+ JOIN offers o ON o.id=u.offer_id
+ JOIN requests r ON r.id=o.request_id;
+CREATE TABLE messages_v10(
+ id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations_v10(id),
+ request_id TEXT REFERENCES requests(id), provider_account_id TEXT REFERENCES provider_profiles(account_id),
+ sender_user_id TEXT NOT NULL REFERENCES users(id), sender_account_id TEXT NOT NULL REFERENCES accounts(id),
+ body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+INSERT INTO messages_v10(id,conversation_id,request_id,provider_account_id,sender_user_id,sender_account_id,body,created_at)
+ SELECT m.id,c.id,route.request_id,route.provider_account_id,m.sender_user_id,m.sender_account_id,m.body,m.created_at
+ FROM messages m
+ JOIN message_routes_v10 route ON route.id=m.id
+ JOIN conversations_v10 c ON c.request_id=route.request_id AND c.provider_account_id=route.provider_account_id
+ WHERE route.request_id IS NOT NULL AND route.provider_account_id IS NOT NULL;
+CREATE TABLE conversation_reads_v10(
+ conversation_id TEXT NOT NULL REFERENCES conversations_v10(id),account_id TEXT NOT NULL REFERENCES accounts(id),
+ last_read_at TEXT NOT NULL, PRIMARY KEY(conversation_id,account_id)
+);
+INSERT OR IGNORE INTO conversation_reads_v10(conversation_id,account_id,last_read_at)
+ SELECT newc.id,reads.account_id,reads.last_read_at
+ FROM conversation_reads reads
+ JOIN conversations oldc ON oldc.id=reads.conversation_id
+ JOIN conversations_v10 newc ON newc.account_low=oldc.account_low AND newc.account_high=oldc.account_high;
+CREATE TABLE chat_unlocks_v10(
+ provider_account_id TEXT NOT NULL REFERENCES accounts(id),
+ customer_account_id TEXT NOT NULL REFERENCES accounts(id),
+ request_id TEXT NOT NULL REFERENCES requests(id),
+ offer_id TEXT NOT NULL UNIQUE REFERENCES offers(id),
+ credit_entry_id TEXT NOT NULL UNIQUE REFERENCES credit_entries(id),
+ created_at TEXT NOT NULL,
+ PRIMARY KEY(provider_account_id,request_id)
+);
+INSERT OR IGNORE INTO chat_unlocks_v10(provider_account_id,customer_account_id,request_id,offer_id,credit_entry_id,created_at)
+ SELECT u.provider_account_id,u.customer_account_id,o.request_id,u.offer_id,u.credit_entry_id,u.created_at
+ FROM chat_unlocks u JOIN offers o ON o.id=u.offer_id;
+DROP TABLE conversation_reads;
+DROP TABLE messages;
+DROP TABLE conversations;
+DROP TABLE chat_unlocks;
+DROP TABLE message_routes_v10;
+ALTER TABLE conversations_v10 RENAME TO conversations;
+ALTER TABLE messages_v10 RENAME TO messages;
+ALTER TABLE conversation_reads_v10 RENAME TO conversation_reads;
+ALTER TABLE chat_unlocks_v10 RENAME TO chat_unlocks;
+CREATE INDEX conversations_request ON conversations(request_id,provider_account_id);
+CREATE INDEX conversations_low ON conversations(account_low,updated_at);
+CREATE INDEX conversations_high ON conversations(account_high,updated_at);
+CREATE INDEX messages_thread ON messages(request_id,provider_account_id,created_at);
+CREATE INDEX messages_conversation ON messages(conversation_id,created_at,id);
+CREATE INDEX messages_sender ON messages(sender_account_id,created_at);
 `}];

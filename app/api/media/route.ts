@@ -1,12 +1,14 @@
 import {query,transaction} from '@/db';
 import {getUser} from '@/lib/auth';
-import {requireManager} from '@/lib/accounts/store';
+import {requireAccount,requireManager} from '@/lib/accounts/store';
 import {HttpError,json,requireSameOrigin} from '@/lib/http';
 export const runtime='nodejs';
 export async function POST(request:Request) {
   try {
     requireSameOrigin(request);const user=await getUser();if(!user)throw new HttpError(401,'Přihlaste se.');
-    const account=requireManager(user);if(account.type==='CUSTOMER')throw new HttpError(403,'Fotografie patří k profilu dodavatele.');
+    const purpose=request.headers.get('x-media-purpose');
+    if(purpose&&purpose!=='request')throw new HttpError(400,'Neplatný účel nahrání.');
+    const account=purpose==='request'?requireAccount(user):requireManager(user);
     const type=request.headers.get('content-type');
     if(!['image/jpeg','image/png','image/webp'].includes(type??''))throw new HttpError(415,'Použijte JPG, PNG nebo WebP.');
     const reader=request.body?.getReader();if(!reader)throw new HttpError(400,'Chybí obrázek.');

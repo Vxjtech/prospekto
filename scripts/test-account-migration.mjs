@@ -48,15 +48,45 @@ try{
   `);
   const original=previous.prepare('SELECT * FROM messages ORDER BY id').all();
   applyMigrations(previous,migrations);applyMigrations(previous,migrations);
-  assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM conversations').get().n,1);
+  assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM conversations').get().n,2);
   assert.deepEqual(previous.prepare('SELECT id,request_id,provider_account_id,sender_user_id,sender_account_id,body,created_at FROM messages ORDER BY id').all(),original);
-  assert.equal(previous.prepare('SELECT COUNT(DISTINCT conversation_id) AS n FROM messages').get().n,1);
-  assert.equal(previous.prepare('SELECT updated_at FROM conversations').get().updated_at,'2026-01-04');
+  assert.equal(previous.prepare('SELECT COUNT(DISTINCT conversation_id) AS n FROM messages').get().n,2);
+  assert.equal(previous.prepare("SELECT updated_at FROM conversations WHERE request_id='r1'").get().updated_at,'2026-01-03');
+  assert.equal(previous.prepare("SELECT updated_at FROM conversations WHERE request_id='r2'").get().updated_at,'2026-01-04');
   assert.equal(previous.prepare('PRAGMA foreign_key_check').all().length,0);
   assert.equal(previous.prepare("SELECT SUM(amount) AS n FROM credit_entries WHERE account_id='provider'").get().n,100000);
   assert.equal(previous.prepare('SELECT COUNT(*) AS n FROM chat_unlocks').get().n,0);
-  console.log('PASS: v3-to-v4 messenger migration preserves every message and merges multiple requests into one contact, idempotently');
+  console.log('PASS: v3-to-v10 messenger migrations preserve history and split conversations by request, idempotently');
 }finally{previous.close();}
+
+const chatUpgrade=new DatabaseSync(':memory:');
+try{
+  applyMigrations(chatUpgrade,migrations.filter(m=>m.version<=9));
+  chatUpgrade.exec(`
+    INSERT INTO users(id,email,password_hash,created_at) VALUES('u-customer','customer@chat.test','hash','now'),('u-provider','provider@chat.test','hash','now');
+    INSERT INTO accounts(id,type,name,created_at,completed_at) VALUES('customer','CUSTOMER','Private name','now','now'),('provider','COMPANY','Business name','now','now');
+    INSERT INTO customer_profiles VALUES('customer');INSERT INTO provider_profiles(account_id) VALUES('provider');
+    INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at) VALUES
+      ('job-1','customer','Job one','Description','stavebnictvi','Praha','praha','now'),
+      ('job-2','customer','Job two','Description','stavebnictvi','Praha','praha','now');
+    INSERT INTO offers(id,request_id,provider_account_id,body,amount_czk,status,created_at) VALUES
+      ('offer-1','job-1','provider','Accepted one',100,'ACCEPTED','now'),
+      ('offer-2','job-2','provider','Accepted two',100,'ACCEPTED','now');
+    INSERT INTO credit_entries VALUES('unlock-credit','provider',-49,'CHAT_UNLOCK','chat:[old-pair]','now');
+    INSERT INTO conversations VALUES('old-thread','customer','provider','now','now');
+    INSERT INTO messages(id,conversation_id,request_id,provider_account_id,sender_user_id,sender_account_id,body,created_at) VALUES
+      ('legacy-message','old-thread',NULL,NULL,'u-customer','customer','Preserve this old message','now'),
+      ('job-message','old-thread','job-2','provider','u-provider','provider','Keep this on job two','now');
+    INSERT INTO chat_unlocks VALUES('provider','customer','offer-1','unlock-credit','now');
+  `);
+  applyMigrations(chatUpgrade,migrations);applyMigrations(chatUpgrade,migrations);
+  assert.equal(chatUpgrade.prepare('SELECT COUNT(*) AS n FROM conversations').get().n,2);
+  assert.equal(chatUpgrade.prepare("SELECT request_id FROM messages WHERE id='legacy-message'").get().request_id,'job-1');
+  assert.equal(chatUpgrade.prepare("SELECT request_id FROM messages WHERE id='job-message'").get().request_id,'job-2');
+  assert.equal(chatUpgrade.prepare("SELECT request_id FROM chat_unlocks WHERE provider_account_id='provider'").get().request_id,'job-1');
+  assert.equal(chatUpgrade.prepare('PRAGMA foreign_key_check').all().length,0);
+  console.log('PASS: v10 splits old contact chats per job, assigns legacy messages to the previously unlocked job and preserves its payment');
+}finally{chatUpgrade.close();}
 
 const business=new DatabaseSync(':memory:');
 try {
@@ -109,7 +139,11 @@ try {
   assert.equal(universal.prepare("SELECT cooperation_type FROM requests WHERE id='existing'").get().cooperation_type,'ONE_OFF');
   assert.equal(universal.prepare("SELECT description FROM requests WHERE id='existing'").get().description,'Original description');
   assert.equal(universal.prepare('SELECT SUM(amount) AS n FROM credit_entries').get().n,12345);
+  universal.prepare('INSERT INTO media_assets(id,account_id,mime_type,contents,created_at) VALUES(?,?,?,?,?)').run('request-photo','person','image/png',Buffer.from('image'),'now');
+  universal.prepare('INSERT INTO request_images(request_id,media_id,position) VALUES(?,?,?)').run('existing','request-photo',0);
+  assert.equal(universal.prepare("SELECT media_id FROM request_images WHERE request_id='existing'").get().media_id,'request-photo');
+  assert.throws(()=>universal.prepare('INSERT INTO request_images(request_id,media_id,position) VALUES(?,?,?)').run('existing','request-photo-2',0));
   universal.exec("INSERT INTO requests(id,customer_account_id,title,description,service_id,city,region,created_at,cooperation_type) VALUES('new','business','New business request','Long-term work','stavebnictvi','Praha','praha','now','LONG_TERM')");
   assert.equal(universal.prepare('PRAGMA foreign_key_check').all().length,0);
-  console.log('PASS: v8 enables existing business requesters without changing requests or credit balances');
+  console.log('PASS: v8-v9 preserve existing requests, support business requesters and enforce request-image constraints');
 }finally{universal.close();}

@@ -6,8 +6,9 @@ export const cooperationLabels={ONE_OFF:'Jednorázová zakázka',LONG_TERM:'Dlou
 export const requesterLabels={CUSTOMER:'Soukromá osoba',COMPANY:'Firma'} as const;
 const cooperationType=z.enum(['ONE_OFF','LONG_TERM']);
 const money=z.number().int().min(0).max(1000000000);
+const mediaUrl=z.string().regex(/^\/api\/media\/[0-9a-f-]{36}\/$/i);
 export const marketplaceAction=z.discriminatedUnion('action',[
- z.object({action:z.literal('request'),title:text(3,160),description:text(10,5000),serviceId:id,city:text(1,160),region:z.string().refine(v=>CZECH_REGIONS.some(r=>r.id===v)),budgetCzk:money.nullable(),cooperationType:cooperationType.default('ONE_OFF')}).strict(),
+ z.object({action:z.literal('request'),title:text(3,160),description:text(10,5000),serviceId:id,city:text(1,160),region:z.string().refine(v=>CZECH_REGIONS.some(r=>r.id===v)),budgetCzk:money.nullable(),cooperationType:cooperationType.default('ONE_OFF'),photos:z.array(mediaUrl).max(5).default([]).refine(urls=>new Set(urls).size===urls.length,'Fotografie se nesmí opakovat.')}).strict(),
  z.object({action:z.literal('close-request'),id}).strict(),
  z.object({action:z.literal('interest'),requestId:id}).strict(),
  z.object({action:z.literal('lead'),title:text(2,160),contactName:text(0,160),valueCzk:money}).strict(),
@@ -21,15 +22,15 @@ export const marketplaceAction=z.discriminatedUnion('action',[
  z.object({action:z.literal('review'),requestId:id,rating:z.number().int().min(1).max(5),body:text(3,3000)}).strict(),
  z.object({action:z.literal('favorite'),providerId:id,enabled:z.boolean()}).strict(),
 ]);
-export type MarketRequest={requesterId:string;requesterType:keyof typeof requesterLabels;cooperationType:keyof typeof cooperationLabels;id:string;title:string;description:string;serviceId:string;city:string;region:string;status:string;budgetCzk:number|null;createdAt:string};
+export type MarketRequest={requesterId:string;requesterType:keyof typeof requesterLabels;cooperationType:keyof typeof cooperationLabels;id:string;title:string;description:string;serviceId:string;city:string;region:string;status:string;budgetCzk:number|null;createdAt:string;photos:string[]};
 export type Lead={id:string;requestId:string|null;title:string;contactName:string;stage:Stage;valueCzk:number;createdAt:string;updatedAt:string};
 export type Task={id:string;title:string;dueAt:string|null;done:number};
 export type Offer={chatUnlocked:boolean;id:string;requestId:string;providerId:string;providerName:string;requestTitle:string;body:string;amountCzk:number;status:string};
-export type Message={id:string;requestId:string|null;providerId:string|null;senderAccountId:string;senderName:string;body:string;createdAt:string};
+export type Message={id:string};
 export type Provider={id:string;name:string;description:string;city:string;avatarUrl:string;website:string;favorite:number;serviceNames:string};
-export type Thread={requestId:string;providerId:string;providerName:string;requestTitle:string;requestStatus:string;customerId:string;customerName:string};
-export type Review={id:string;rating:number;body:string;providerName:string};
-export type MarketplaceState={credits:number;summary:{newLeads:number;activeLeads:number;offers:number;won:number;pipelineValue:number};ownRequests:MarketRequest[];receivedOffers:Offer[];givenReviews:Review[];requests:MarketRequest[];leads:Lead[];tasks:Task[];offers:Offer[];messages:Message[];providers:Provider[];threads:Thread[];reviews:Review[]};
+export type ProviderProfile={id:string;name:string;description:string;experience:string;city:string;maxDistanceKm:number;avatarUrl:string;coverUrl:string;ico:string;foundedYear:number|null;website:string;socialLinks:string[];services:string[];portfolio:{imageUrl:string;title:string}[];referencesText:string;reviews:{id:string;rating:number;body:string}[]};
+export type Review={id:string;requestId:string;rating:number;body:string;providerName:string};
+export type MarketplaceState={credits:number;summary:{newLeads:number;activeLeads:number;offers:number;won:number;pipelineValue:number};ownRequests:MarketRequest[];receivedOffers:Offer[];givenReviews:Review[];requests:MarketRequest[];leads:Lead[];tasks:Task[];offers:Offer[];messages:Message[];providers:Provider[];reviews:Review[]};
 
 
 export type RequestFeed={items:MarketRequest[];total:number;page:number;pages:number};

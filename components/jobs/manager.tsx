@@ -10,7 +10,7 @@ export function JobManager({jobs,applications,companyName,contactName,email,save
  const values=editing??{...defaults,contactName,contactEmail:email};
  async function action(body:unknown){
   setBusy(true);setError('');
-  try{const r=await fetch('/api/jobs/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw new Error(result.error);window.location.assign('/zamestnavatel/prace/?saved=1');}
+  try{const r=await fetch('/api/jobs/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw new Error(result.error);window.location.assign('/dodavatel/nabor/?saved=1');}
   catch(e){setError((e as Error).message);setBusy(false);}
  }
  function submit(e:FormEvent<HTMLFormElement>){

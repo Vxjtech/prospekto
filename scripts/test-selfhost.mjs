@@ -191,8 +191,16 @@ try {
   check((await request('/api/accounts/',{cookie:customer.cookie,body:{action:'switch',accountId:'unknown'}})).status===403,'switching to an unowned account fails');
   check((await request('/api/auth/register/',{body:{email:'bad-role@example.test',password:'test-only-password-123',firstName:'Test',lastName:'Test',accountType:'PLATFORM_ADMIN'}})).status===400,'registration cannot grant platform admin');
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'lead',title:'Forged',contactName:'',valueCzk:0}})).status===403,'customer cannot create a lead');
-  const rstate=await market(customer.cookie,{action:'request',title:'Rekonstrukce koupelny',description:'Potřebuji rekonstruovat koupelnu v bytě.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:100000});
+  const customerPhoto=await fetch(origin+'/api/media/',{method:'POST',headers:{origin,cookie:customer.cookie,'Content-Type':'image/png','X-Media-Purpose':'request'},body:png});
+  check(customerPhoto.status===200,'customer can upload a photograph for a request');
+  const {url:requestPhoto}=await customerPhoto.json();
+  const rstate=await market(customer.cookie,{action:'request',title:'Rekonstrukce koupelny',description:'Potřebuji rekonstruovat koupelnu v bytě.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:100000,photos:[requestPhoto]});
   const requestId=rstate.requests[0].id;
+  check(rstate.requests[0].photos.includes(requestPhoto),'request stores and returns its attached photographs');
+  check((await request(requestPhoto)).status===200,'request photograph is published once attached');
+  const requestFeed=await (await request('/api/marketplace/?scope=all',{cookie:alice})).json();
+  check(requestFeed.items.some(item=>item.id===requestId&&item.photos.includes(requestPhoto)),'supplier feed includes request photographs');
+  check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'request',title:'Cizí fotografie',description:'Pokus o použití obrázku jiného účtu.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:null,photos:[imageUrl]}})).status===400,'request cannot attach another account photograph');
   check((await (await request('/api/marketplace/',{cookie:stranger.cookie})).json()).state.requests.length===0,'customer requests are account-scoped');
   check((await request('/api/marketplace/',{cookie:stranger.cookie,body:{action:'close-request',id:requestId}})).status===404,'another customer cannot close a request');
   const aliceId=(await (await request('/api/accounts/',{cookie:alice})).json()).account.id;
@@ -205,14 +213,13 @@ try {
   check(mstate.credits===100000,'sending an offer is free');
   check((await request('/api/marketplace/',{cookie:alice,body:{action:'unlock-chat',id:offerId}})).status===409,'unaccepted offer cannot unlock chat');
   check((await request('/api/marketplace/',{cookie:alice,body:{action:'message',requestId,providerId:aliceId,body:'Blocked'}})).status===403,'legacy message API cannot bypass acceptance');
-  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',contactId:aliceId}})).status===403,'direct profile chat cannot bypass acceptance');
+  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',offerId}})).status===404,'chat cannot open before an offer is accepted');
   check((await request('/api/marketplace/',{cookie:stranger.cookie,body:{action:'accept-offer',id:offerId}})).status===404,'another customer cannot accept an offer');
   await market(customer.cookie,{action:'accept-offer',id:offerId});
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'accept-offer',id:offerId}})).status===409,'offer cannot be accepted twice');
   check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.summary.won===1,'accepted offer becomes a won job');
   check((await request('/api/marketplace/',{cookie:alice,body:{action:'message',requestId,providerId:aliceId,body:'Blocked'}})).status===402,'acceptance alone does not allow sending');
-  const lockedStart=await (await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',contactId:aliceId}})).json();
-  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'send',conversationId:lockedStart.conversationId,body:'Blocked customer message',clientId:crypto.randomUUID()}})).status===402,'customer cannot bypass payment through messenger');
+  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',offerId}})).status===402,'accepted offer is not chat-accessible until that job is unlocked');
   check((await request('/api/marketplace/',{cookie:bob,body:{action:'unlock-chat',id:offerId}})).status===404,'another supplier cannot pay for an unrelated offer');
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'unlock-chat',id:offerId}})).status===403,'customer cannot debit supplier credits');
   const paid=await Promise.all([market(alice,{action:'unlock-chat',id:offerId}),market(alice,{action:'unlock-chat',id:offerId})]);
@@ -222,12 +229,21 @@ try {
   await market(customer.cookie,{action:'message',requestId,providerId:aliceId,body:'Děkuji, pošlete mi prosím cenu.'});
   check(await balance(alice)===99951,'subsequent messages are free');
   const navHtml=await (await request('/dodavatel/',{cookie:alice})).text();
-  check(!navHtml.includes('Moje leady')&&navHtml.includes('kreditů'),'dashboard removes lead navigation and displays credits');
+  check(!navHtml.includes('Moje leady')&&!navHtml.includes('Moje recenze')&&navHtml.includes('kreditů'),'dashboard removes lead and review navigation and displays credits');
   check((await request('/dodavatel/leady/',{cookie:alice})).headers.get('location')==='/dodavatel/nabidky/','old leads URL redirects to offers');
+  check((await request('/dodavatel/recenze/',{cookie:alice})).headers.get('location')==='/dodavatel/zpravy/','old reviews URL redirects to messages');
 
   await market(customer.cookie,{action:'close-request',id:requestId});
   await market(customer.cookie,{action:'review',requestId,rating:5,body:'Skvěle odvedená práce.'});
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'review',requestId,rating:5,body:'Again'}})).status===409,'duplicate reviews are rejected');
+  check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.reviews.some(r=>r.requestId===requestId&&r.body==='Skvěle odvedená práce.'),'supplier receives the review on its own profile');
+  check((await (await request('/api/marketplace/providers/'+encodeURIComponent(aliceId)+'/',{cookie:customer.cookie})).json()).profile.reviews.some(r=>r.body==='Skvěle odvedená práce.'),'public supplier profile includes received reviews');
+  const nextJob=(await market(customer.cookie,{action:'request',title:'Další oprava koupelny',description:'Druhá samostatná zakázka pro stejného dodavatele.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:40000})).requests.find(r=>r.title==='Další oprava koupelny');
+  const nextOffer=(await market(alice,{action:'offer',requestId:nextJob.id,body:'Opravu provedeme příští měsíc.',amountCzk:39000})).offers.find(o=>o.requestId===nextJob.id);
+  await market(customer.cookie,{action:'accept-offer',id:nextOffer.id});
+  await market(alice,{action:'unlock-chat',id:nextOffer.id});
+  const jobChats=(await (await request('/api/messenger/',{cookie:alice})).json()).conversations;
+  check(await balance(alice)===99902&&jobChats.length===2&&new Set(jobChats.map(c=>c.conversationId)).size===2&&jobChats.some(c=>c.requestTitle==='Další oprava koupelny'),'same account pair gets a separate conversation and 49-credit unlock for each job');
   await market(customer.cookie,{action:'favorite',providerId:aliceId,enabled:true});
   check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.providers.some(p=>p.id===aliceId&&p.favorite),'favorite supplier persists');
   // All requests must be discoverable independently of the supplier profile.
@@ -250,25 +266,22 @@ try {
   check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.offers.some(o=>o.requestId===outsideId&&o.amountCzk===2800),'customer receives the directly submitted offer');
   await market(customer.cookie,{action:'accept-offer',id:directOffer.offers.find(o=>o.requestId===outsideId).id});
   await market(alice,{action:'unlock-chat',id:directOffer.offers.find(o=>o.requestId===outsideId).id});
-  check(await balance(alice)===99951,'second accepted request with same customer does not charge again');
+  check(await balance(alice)===99853,'third accepted job with the same customer is charged its own 49-credit unlock');
   check((await request('/api/marketplace/',{cookie:alice,body:{action:'offer',requestId,body:'Cannot reopen closed request',amountCzk:1}})).status===409,'closed requests still reject offers');
 
-  // Messenger supports direct contacts, preserves request conversations and enforces account isolation.
+  // Messenger is scoped to one job, exposes no participant identity and enforces account isolation.
   const chat=async(cookie,body)=>{const response=await request('/api/messenger/',{cookie,body});assert.equal(response.status,200,await response.clone().text());return response.json();};
   const chats=async cookie=>(await (await request('/api/messenger/',{cookie})).json()).conversations;
-  const aliceChats=await chats(alice),conversationId=aliceChats[0].conversationId;
-  check(aliceChats.length===1&&aliceChats[0].id===customerId,'multiple requests share one messenger contact with the customer name');
+  const aliceChats=await chats(alice),originalJobChat=aliceChats.find(c=>c.requestId===requestId),conversationId=originalJobChat?.conversationId;
+  check(aliceChats.length===3&&originalJobChat?.requestTitle==='Rekonstrukce koupelny'&&originalJobChat.requestPhoto===requestPhoto&&!('name'in originalJobChat)&&!('id'in originalJobChat),'chat list shows each job title and thumbnail without account identity');
   const oldMessages=await (await request('/api/messenger/?conversationId='+conversationId,{cookie:alice})).json();
-  check(oldMessages.items.length===2&&oldMessages.items[0].body==='Rádi připravíme nabídku.','request messages appear chronologically in the messenger');
+  check(oldMessages.items.length===2&&oldMessages.items[0].body==='Rádi připravíme nabídku.'&&oldMessages.items.every(message=>typeof message.isOwn==='boolean'&&!('senderName'in message)&&!('senderAccountId'in message))&&oldMessages.requestTitle==='Rekonstrukce koupelny'&&oldMessages.requestPhoto===requestPhoto&&!('providerId'in oldMessages)&&!('customerId'in oldMessages),'job chat exposes its title and thumbnail without account identities');
   check((await request('/api/messenger/')).status===401,'anonymous messenger access is rejected');
   for(const body of [{action:'send',conversationId,body:'Forged message',clientId:crypto.randomUUID()},{action:'read',conversationId,messageId:oldMessages.items[0].id}])check((await request('/api/messenger/',{cookie:bob,body})).status===404,'unrelated accounts cannot write or mark another conversation read');
   check((await request('/api/messenger/?conversationId='+conversationId,{cookie:bob})).status===404,'unrelated accounts cannot read another conversation');
-  const strangerId=(await (await request('/api/accounts/',{cookie:stranger.cookie})).json()).account.id;
-  check((await request('/api/messenger/',{cookie:alice,body:{action:'start',contactId:strangerId}})).status===404,'private customers cannot be contacted without a relationship');
-  const candidates=(await (await request('/api/messenger/?scope=contacts',{cookie:alice})).json()).contacts;
-  check(candidates.some(c=>c.id===customerId)&&!candidates.some(c=>c.id===strangerId),'contact search includes related customers and excludes unrelated private accounts');
+  check((await request('/api/messenger/',{cookie:stranger.cookie,body:{action:'start',offerId}})).status===404,'chat cannot be opened by an unrelated account');
   const bobId=(await (await request('/api/accounts/',{cookie:bob})).json()).account.id;
-  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',contactId:bobId}})).status===403,'new customer-provider contact requires an accepted offer');
+  check((await request('/api/messenger/',{cookie:customer.cookie,body:{action:'start',offerId:directOffer.offers.find(o=>o.requestId===outsideId).id}})).status===200,'customer can open the job chat after the supplier unlocks that job');
   const bobRequest=await market(customer.cookie,{action:'request',title:'Druhá koupelna',description:'Další rekonstrukce koupelny v bytě.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:50000});
   const bobRequestId=bobRequest.requests.find(r=>r.title==='Druhá koupelna').id;
   const bobOffer=(await market(bob,{action:'offer',requestId:bobRequestId,body:'Rekonstrukce včetně materiálu.',amountCzk:49000})).offers[0];
@@ -280,8 +293,8 @@ try {
   creditDb.prepare('INSERT INTO credit_entries VALUES(?,?,?,?,?,?)').run('test-topup',bobId,1,'TEST','test-topup',new Date().toISOString());creditDb.close();
   await market(bob,{action:'unlock-chat',id:bobOffer.id});
   check(await balance(bob)===0,'exactly 49 credits unlocks chat without negative balance');
-  const direct=(await chat(customer.cookie,{action:'start',contactId:bobId})).conversationId;
-  check((await chat(customer.cookie,{action:'start',contactId:bobId})).conversationId===direct,'opening unlocked conversation is idempotent');
+  const direct=(await chat(customer.cookie,{action:'start',offerId:bobOffer.id})).conversationId;
+  check((await chat(customer.cookie,{action:'start',offerId:bobOffer.id})).conversationId===direct,'opening unlocked job chat is idempotent');
   const message={action:'send',conversationId:direct,body:'Dobrý den, máte příští týden čas?',clientId:crypto.randomUUID()};
   await chat(customer.cookie,message);await chat(customer.cookie,message);
   check((await (await request('/api/messenger/?conversationId='+direct,{cookie:bob})).json()).items.length===1,'retrying a message does not send it twice');
@@ -393,16 +406,16 @@ try {
   const receiver=(await (await request('/api/marketplace/',{cookie:company.cookie})).json()).state;
   check(receiver.receivedOffers.some(o=>o.id===b2bOffer.id)&&!receiver.offers.some(o=>o.id===b2bOffer.id),'received business offers are separate from outgoing ones');
   check(!(await (await request('/api/marketplace/',{cookie:bob})).json()).state.receivedOffers.some(o=>o.id===b2bOffer.id),'business incoming offers remain private');
-  check((await request('/api/messenger/',{cookie:alice,body:{action:'start',contactId:companyId}})).status===403,'business profile chat cannot bypass acceptance');
+  check((await request('/api/messenger/',{cookie:alice,body:{action:'start',offerId:b2bOffer.id}})).status===404,'B2B chat cannot open before this job is accepted');
   check((await request('/api/marketplace/',{cookie:company.cookie,body:{action:'message',requestId:b2bRequest.id,providerId:aliceId,body:'Blocked company message'}})).status===403,'requester business cannot message before acceptance');
   check((await request('/api/marketplace/',{cookie:alice,body:{action:'accept-offer',id:b2bOffer.id}})).status===404,'supplier cannot accept its own outgoing offer');
   await market(company.cookie,{action:'accept-offer',id:b2bOffer.id});
-  const lockedB2B=(await chat(company.cookie,{action:'start',contactId:aliceId})).conversationId;
-  check((await request('/api/messenger/',{cookie:company.cookie,body:{action:'send',conversationId:lockedB2B,body:'Blocked without payment',clientId:crypto.randomUUID()}})).status===402,'accepted B2B conversation still requires supplier payment');
+  check((await request('/api/messenger/',{cookie:company.cookie,body:{action:'start',offerId:b2bOffer.id}})).status===402,'accepted B2B job requires its own supplier payment');
   check((await request('/api/marketplace/',{cookie:company.cookie,body:{action:'unlock-chat',id:b2bOffer.id}})).status===404,'business requester cannot pay from the supplier account');
   const beforeSupplier=await balance(alice),beforeRequester=await balance(company.cookie);
   await Promise.all([market(alice,{action:'unlock-chat',id:b2bOffer.id}),market(alice,{action:'unlock-chat',id:b2bOffer.id})]);
   check(await balance(alice)===beforeSupplier-49&&await balance(company.cookie)===beforeRequester,'B2B chat charges the supplier exactly once and leaves requester credits untouched');
+  const lockedB2B=(await chat(company.cookie,{action:'start',offerId:b2bOffer.id})).conversationId;
   await market(company.cookie,{action:'message',requestId:b2bRequest.id,providerId:aliceId,body:'Domluvíme pravidelnou spolupráci.'});
   await chat(alice,{action:'send',conversationId:lockedB2B,body:'Ano, souhlasíme.',clientId:crypto.randomUUID()});
   check((await (await request('/api/messenger/?conversationId='+lockedB2B,{cookie:company.cookie})).json()).items.length===2,'both businesses can communicate after unlocking');
@@ -415,8 +428,9 @@ try {
   const reverseOffer=(await market(company.cookie,{action:'offer',requestId:reversed.id,body:'Tentokrát práci zajistí naše firma.',amountCzk:1000})).offers.find(o=>o.requestId===reversed.id);
   await market(alice,{action:'accept-offer',id:reverseOffer.id});
   await market(company.cookie,{action:'unlock-chat',id:reverseOffer.id});
-  check(await balance(company.cookie)===beforeRequester&&(await chat(alice,{action:'start',contactId:companyId})).conversationId===lockedB2B,'swapping business roles reuses the paid conversation without a second charge');
-  check((await request('/dodavatel/moje-poptavky/',{cookie:company.cookie})).status===200&&(await request('/dodavatel/prijate-nabidky/',{cookie:company.cookie})).status===200,'business requester pages are accessible in the same account');
+  const reversedChat=(await chat(alice,{action:'start',offerId:reverseOffer.id})).conversationId;
+  check(await balance(company.cookie)===beforeRequester-49&&reversedChat!==lockedB2B,'a different job between the same accounts has its own chat and unlock charge');
+  check((await request('/dodavatel/moje-poptavky/',{cookie:company.cookie})).status===200&&(await request('/dodavatel/prijate-nabidky/',{cookie:company.cookie})).headers.get('location')==='/dodavatel/moje-poptavky/','business offer inbox redirects to owned requests');
 
   check((await request('/api/panel/',{cookie:stranger.cookie,body:{action:'settings',data:shared.settings}})).status===403,'company member cannot change bot configuration');
   const addContext=await request('/api/accounts/',{cookie:alice,body:{action:'choose',type:'CUSTOMER',newContext:true}});

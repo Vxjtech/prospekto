@@ -24,3 +24,8 @@
 .p-data-status:has(>*){padding:22px;text-align:center}.p-data-status p{margin-bottom:12px}.p-pagination>div{flex-wrap:wrap;justify-content:center}.p-pagination button{width:auto;min-width:32px;padding-inline:8px}.p-details dd{overflow-wrap:anywhere}.p-company-filters .company-region-note{font-size:12px}@media(max-width:600px){.p-pagination{flex-wrap:wrap;gap:12px}.p-pagination>div{max-width:100%}}
 
 button.p-sidebar-exit{background:none;border-right:0;border-bottom:0;border-left:0;text-align:left;}
+.p-sidebar .workspace-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:14px}
+.p-sidebar .workspace-tabs a{display:block;min-height:0;padding:7px 8px;border-radius:6px;color:#b4c2af;font-size:12px;font-weight:700;text-align:center;transition:background .18s,color .18s}
+.p-sidebar .workspace-tabs a:hover{background:#263b2d;color:#fff}
+.p-sidebar .workspace-tabs a.active{background:var(--pistachio);color:var(--forest)}
+.p-sidebar .workspace-tabs a:focus-visible{outline-color:var(--pistachio);outline-offset:2px}
