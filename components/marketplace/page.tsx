@@ -4,11 +4,14 @@ import {getUser} from '@/lib/auth';
 import {catalog,getContext,onboardingData,requireAccount} from '@/lib/accounts/store';
 import {canManage,destination,type AccountType} from '@/lib/accounts/model';
 import {marketState} from '@/lib/marketplace/store';
+import {publicJob,publicJobs} from '@/lib/jobs/store';
+import type {Job,JobPage} from '@/lib/jobs/model';
 import {Dashboard} from './dashboard';
 import {employerJobs,applications} from '@/lib/jobs/store';
 import '@/app/panel/panel.css';
 import '@/app/marketplace.css';
-export async function AccountPage({type,section,saved=false}:{type:AccountType;section:string[];saved?:boolean}) {
+import '@/app/prace/jobs.css';
+export async function AccountPage({type,section,saved=false,searchParams={}}:{type:AccountType;section:string[];saved?:boolean;searchParams?:Record<string,string|string[]|undefined>}) {
   const user=await getUser();if(!user)redirect('/prihlaseni/');
   const context=getContext(user),account=context.account;
   if(context.platformAdmin||!account?.completedAt||account.type!==type)redirect(destination(context));
@@ -18,9 +21,12 @@ export async function AccountPage({type,section,saved=false}:{type:AccountType;s
   if(type!=='CUSTOMER'&&view==='prijate-nabidky'&&section.length===1)redirect(destination(context)+'moje-poptavky/');
   if(type!=='CUSTOMER'&&view==='statistiky'&&section.length===1)redirect(destination(context));
   if(view==='recenze'&&section.length===1)redirect(destination(context)+'zpravy/');
-  const allowed=type==='CUSTOMER'?['prehled','poptavky','nova-poptavka','nabidky','zpravy','dodavatele','oblibeni','nastaveni']:['prehled','poptavky','moje-poptavky','nova-poptavka','dodavatele','oblibeni','leady','zpravy','zakazky','kalendar','profil','nastaveni','nabidky','nabor'];
-  if(section.length>1||!allowed.includes(view))notFound();
+  const allowed=type==='CUSTOMER'?['prehled','poptavky','nova-poptavka','nabidky','zpravy','dodavatele','oblibeni','profil','nastaveni','prace']:['prehled','poptavky','moje-poptavky','nova-poptavka','dodavatele','oblibeni','leady','zpravy','zakazky','kalendar','profil','nastaveni','nabidky','nabor'];
+  const jobDetails:Job|undefined=type==='CUSTOMER'&&view==='prace'&&section.length===2?publicJob(section[1])??undefined:undefined;
+  if((section.length>1&&(!jobDetails||section.length!==2))||!allowed.includes(view))notFound();
   if(view==='nabor'&&!canManage(account.role))notFound();
   const team=type==='COMPANY'&&canManage(account.role)?query('SELECT p.name,u.email,m.role FROM account_members m JOIN users u ON u.id=m.user_id LEFT JOIN profiles p ON p.id=u.id WHERE m.account_id=? ORDER BY m.created_at',account.id).all<{name:string;email:string;role:string}>():[];
-  return <Dashboard key={account.id+view} context={context} initial={marketState(user)} view={view} name={user.fullName??user.email} email={user.email} services={catalog()} profile={type==='CUSTOMER'?null:onboardingData(user,account)} team={team} jobs={view==='nabor'?employerJobs(user):[]} applications={view==='nabor'?applications(user):[]} saved={saved}/>;
+  const jobFilters=Object.fromEntries(Object.entries(searchParams).filter((entry):entry is [string,string]=>typeof entry[1]==='string'));
+  const jobsPage:JobPage|undefined=type==='CUSTOMER'&&view==='prace'&&!jobDetails?publicJobs(new URLSearchParams(jobFilters)):undefined;
+  return <Dashboard key={account.id+view+JSON.stringify(jobFilters)+jobDetails?.id} context={context} initial={marketState(user)} view={view} name={user.fullName??user.email} email={user.email} services={catalog()} profile={type==='CUSTOMER'?null:onboardingData(user,account)} team={team} jobs={view==='nabor'?employerJobs(user):[]} applications={view==='nabor'?applications(user):[]} jobsPage={jobsPage} jobDetails={jobDetails} jobFilters={jobFilters} saved={saved}/>;
 }

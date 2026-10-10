@@ -347,4 +347,13 @@ CREATE INDEX conversations_high ON conversations(account_high,updated_at);
 CREATE INDEX messages_thread ON messages(request_id,provider_account_id,created_at);
 CREATE INDEX messages_conversation ON messages(conversation_id,created_at,id);
 CREATE INDEX messages_sender ON messages(sender_account_id,created_at);
+`}, {version: 11, sql: `
+CREATE TABLE customer_reviews(
+ id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
+ customer_account_id TEXT NOT NULL REFERENCES customer_profiles(account_id),
+ provider_account_id TEXT NOT NULL REFERENCES provider_profiles(account_id),
+ rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+ body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX customer_reviews_customer ON customer_reviews(customer_account_id,created_at);
 `}];

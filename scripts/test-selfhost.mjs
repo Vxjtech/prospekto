@@ -188,6 +188,10 @@ try {
   check((await request('/zakaznik/',{cookie:alice})).headers.get('location')==='/dodavatel/','provider cannot enter customer routes');
   const customerHtml=await (await request('/zakaznik/',{cookie:customer.cookie})).text();
   check(customerHtml.includes('Vytvořit poptávku')&&!customerHtml.includes('href="/nastroje/"')&&!customerHtml.includes('href="/zakaznik/crm/"'),'customer dashboard has customer navigation');
+  check(customerHtml.includes('href="/zakaznik/profil/"'),'personal account navigation includes profile');
+  check(customerHtml.includes('href="/zakaznik/prace/"'),'personal account navigation includes job listings');
+  const customerJobsInitialHtml=await (await request('/zakaznik/prace/?q=technik',{cookie:customer.cookie})).text();
+  check(customerJobsInitialHtml.includes('aria-label="Zákaznické prostředí"')&&customerJobsInitialHtml.includes('aria-label="Pozice, firma nebo město"')&&customerJobsInitialHtml.includes('value="technik"'),'customer job listings keep the account sidebar and filters');
   check((await request('/api/accounts/',{cookie:customer.cookie,body:{action:'switch',accountId:'unknown'}})).status===403,'switching to an unowned account fails');
   check((await request('/api/auth/register/',{body:{email:'bad-role@example.test',password:'test-only-password-123',firstName:'Test',lastName:'Test',accountType:'PLATFORM_ADMIN'}})).status===400,'registration cannot grant platform admin');
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'lead',title:'Forged',contactName:'',valueCzk:0}})).status===403,'customer cannot create a lead');
@@ -236,6 +240,13 @@ try {
   await market(customer.cookie,{action:'close-request',id:requestId});
   await market(customer.cookie,{action:'review',requestId,rating:5,body:'Skvěle odvedená práce.'});
   check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'review',requestId,rating:5,body:'Again'}})).status===409,'duplicate reviews are rejected');
+  check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.customerReviewRequests.some(r=>r.requestId===requestId),'selected supplier can review a customer after job completion');
+  check((await request('/api/marketplace/',{cookie:customer.cookie,body:{action:'review-customer',requestId,rating:5,body:'Unauthorized'}})).status===403,'customers cannot submit supplier-to-customer reviews');
+  await market(alice,{action:'review-customer',requestId,rating:5,body:'Spolehlivá domluva a rychlá platba.'});
+  check((await (await request('/api/marketplace/',{cookie:customer.cookie})).json()).state.customerReviews.some(r=>r.requestId===requestId&&r.providerName&&r.body==='Spolehlivá domluva a rychlá platba.'),'customer receives the supplier review with author and job context');
+  check((await request('/api/marketplace/',{cookie:alice,body:{action:'review-customer',requestId,rating:4,body:'Duplicate'}})).status===409,'customer can only be reviewed once per completed job');
+  const customerProfile=await (await request('/zakaznik/profil/',{cookie:customer.cookie})).text();
+  check(customerProfile.includes('Hodnocení od řemeslníků')&&customerProfile.includes('Spolehlivá domluva a rychlá platba.'),'customer profile displays received supplier reviews');
   check((await (await request('/api/marketplace/',{cookie:alice})).json()).state.reviews.some(r=>r.requestId===requestId&&r.body==='Skvěle odvedená práce.'),'supplier receives the review on its own profile');
   check((await (await request('/api/marketplace/providers/'+encodeURIComponent(aliceId)+'/',{cookie:customer.cookie})).json()).profile.reviews.some(r=>r.body==='Skvěle odvedená práce.'),'public supplier profile includes received reviews');
   const nextJob=(await market(customer.cookie,{action:'request',title:'Další oprava koupelny',description:'Druhá samostatná zakázka pro stejného dodavatele.',serviceId:'rekonstrukce',city:'Ostrava',region:'moravskoslezsky',budgetCzk:40000})).requests.find(r=>r.title==='Další oprava koupelny');
@@ -343,6 +354,11 @@ try {
   const publicJobsPage=await request('/prace/?q=Stavbyvedouc%C3%AD&category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000');
   const publicJobsHtml=await publicJobsPage.text();
   check(publicJobsPage.status===200&&publicJobsHtml.includes('Stavbyvedoucí')&&publicJobsHtml.includes('Hledat práci'),'anonymous visitors can search public jobs without registration');
+  const customerJobsPage=await request('/zakaznik/prace/?q=Stavbyvedouc%C3%AD&category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000',{cookie:customer.cookie});
+  const customerJobsHtml=await customerJobsPage.text();
+  check(customerJobsPage.status===200&&customerJobsHtml.includes('aria-label="Zákaznické prostředí"')&&customerJobsHtml.includes('href="/zakaznik/prace/'+jobId+'/"')&&customerJobsHtml.includes('Stavbyvedoucí'),'customer can search job listings inside the account sidebar');
+  const customerJobDetail=await (await request('/zakaznik/prace/'+jobId+'/',{cookie:customer.cookie})).text();
+  check(customerJobDetail.includes('aria-label="Zákaznické prostředí"')&&customerJobDetail.includes('Reagovat na pozici')&&customerJobDetail.includes('Všechny pracovní nabídky'),'job detail and return navigation stay inside the customer account');
   const homePage=await (await request('/')).text();
   check(homePage.includes('href="/prace/"')&&homePage.includes('Pracovní nabídky'),'main website navigation links directly to public job search');
   const jobData=await (await request('/api/jobs/?category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000')).json();

@@ -61,8 +61,10 @@ export function marketState(user:User):MarketplaceState {
     ' FROM accounts a JOIN provider_profiles p ON p.account_id=a.id LEFT JOIN service_areas s ON s.account_id=a.id WHERE a.completed_at IS NOT NULL AND a.id<>? ORDER BY a.name LIMIT 200',id,id).all<Provider>();
   const reviews=query('SELECT v.id,v.request_id AS requestId,v.rating,v.body,a.name AS providerName FROM reviews v JOIN accounts a ON a.id=v.provider_account_id WHERE '+(customer?'v.customer_account_id':'v.provider_account_id')+'=? ORDER BY v.created_at DESC LIMIT 200',id).all<Review>();
   const givenReviews=query('SELECT v.id,v.request_id AS requestId,v.rating,v.body,a.name AS providerName FROM reviews v JOIN accounts a ON a.id=v.provider_account_id WHERE v.customer_account_id=? ORDER BY v.created_at DESC LIMIT 200',id).all<Review>();
+  const customerReviews=customer?query('SELECT cr.id,cr.request_id AS requestId,r.title AS requestTitle,cr.rating,cr.body,a.name AS providerName FROM customer_reviews cr JOIN accounts a ON a.id=cr.provider_account_id JOIN requests r ON r.id=cr.request_id WHERE cr.customer_account_id=? ORDER BY cr.created_at DESC LIMIT 200',id).all<MarketplaceState['customerReviews'][number]>():[];
+  const customerReviewRequests=customer?[]:query("SELECT r.id AS requestId,r.title FROM requests r JOIN offers o ON o.request_id=r.id JOIN accounts c ON c.id=r.customer_account_id AND c.type='CUSTOMER' WHERE o.provider_account_id=? AND o.status='ACCEPTED' AND r.status='CLOSED' AND NOT EXISTS(SELECT 1 FROM customer_reviews cr WHERE cr.request_id=r.id) ORDER BY r.created_at DESC LIMIT 200",id).all<MarketplaceState['customerReviewRequests'][number]>();
   const summary=customer?{newLeads:0,activeLeads:0,offers:offers.length,won:0,pipelineValue:0}:query("SELECT COUNT(CASE WHEN stage='NEW' THEN 1 END) AS newLeads,COUNT(CASE WHEN stage NOT IN ('WON','LOST') THEN 1 END) AS activeLeads,(SELECT COUNT(*) FROM offers WHERE provider_account_id=?) AS offers,COUNT(CASE WHEN stage='WON' THEN 1 END) AS won,COALESCE(SUM(CASE WHEN stage NOT IN ('WON','LOST') THEN value_czk ELSE 0 END),0) AS pipelineValue FROM leads WHERE account_id=?",id,id).get<MarketplaceState['summary']>()!;
-  return {credits:creditBalance(id),summary,ownRequests,receivedOffers,givenReviews,requests,leads,tasks,offers,messages,providers,reviews};
+  return {credits:creditBalance(id),summary,ownRequests,receivedOffers,givenReviews,customerReviews,customerReviewRequests,requests,leads,tasks,offers,messages,providers,reviews};
 }
 export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) {
   const requesterActions=['request','close-request','accept-offer','review','favorite'];
@@ -128,6 +130,12 @@ export function marketAction(user:User,input:z.infer<typeof marketplaceAction>) 
     if(!o)throw new HttpError(403,'Hodnotit můžete vybraného dodavatele po dokončení poptávky.');
     if(query('SELECT 1 FROM reviews WHERE request_id=? AND customer_account_id=?',input.requestId,id).get())throw new HttpError(409,'Tuto zakázku jste již hodnotili.');
     query('INSERT INTO reviews(id,request_id,customer_account_id,provider_account_id,rating,body,created_at) VALUES(?,?,?,?,?,?,?)',crypto.randomUUID(),input.requestId,id,o.provider_account_id,input.rating,input.body,now).run();
+  }
+  if(input.action==='review-customer'){
+    const r=query("SELECT r.customer_account_id FROM requests r JOIN offers o ON o.request_id=r.id JOIN accounts c ON c.id=r.customer_account_id AND c.type='CUSTOMER' WHERE r.id=? AND o.provider_account_id=? AND r.status='CLOSED' AND o.status='ACCEPTED'",input.requestId,id).get<{customer_account_id:string}>();
+    if(!r)throw new HttpError(403,'Hodnotit zákazníka můžete po dokončení zakázky, kterou jste získali.');
+    if(query('SELECT 1 FROM customer_reviews WHERE request_id=?',input.requestId).get())throw new HttpError(409,'Tuto zakázku jste již hodnotili.');
+    query('INSERT INTO customer_reviews(id,request_id,customer_account_id,provider_account_id,rating,body,created_at) VALUES(?,?,?,?,?,?,?)',crypto.randomUUID(),input.requestId,r.customer_account_id,id,input.rating,input.body,now).run();
   }
   if(input.action==='favorite'){
     if(input.providerId===id)throw new HttpError(400,'Vlastní účet nelze uložit jako dodavatele.');

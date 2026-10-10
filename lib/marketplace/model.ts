@@ -20,6 +20,7 @@ export const marketplaceAction=z.discriminatedUnion('action',[
  z.object({action:z.literal('unlock-chat'),id}).strict(),
  z.object({action:z.literal('message'),requestId:id,providerId:id,body:text(1,5000)}).strict(),
  z.object({action:z.literal('review'),requestId:id,rating:z.number().int().min(1).max(5),body:text(3,3000)}).strict(),
+ z.object({action:z.literal('review-customer'),requestId:id,rating:z.number().int().min(1).max(5),body:text(3,3000)}).strict(),
  z.object({action:z.literal('favorite'),providerId:id,enabled:z.boolean()}).strict(),
 ]);
 export type MarketRequest={requesterId:string;requesterType:keyof typeof requesterLabels;cooperationType:keyof typeof cooperationLabels;id:string;title:string;description:string;serviceId:string;city:string;region:string;status:string;budgetCzk:number|null;createdAt:string;photos:string[]};
@@ -30,7 +31,9 @@ export type Message={id:string};
 export type Provider={id:string;name:string;description:string;city:string;avatarUrl:string;website:string;favorite:number;serviceNames:string};
 export type ProviderProfile={id:string;name:string;description:string;experience:string;city:string;maxDistanceKm:number;avatarUrl:string;coverUrl:string;ico:string;foundedYear:number|null;website:string;socialLinks:string[];services:string[];portfolio:{imageUrl:string;title:string}[];referencesText:string;reviews:{id:string;rating:number;body:string}[]};
 export type Review={id:string;requestId:string;rating:number;body:string;providerName:string};
-export type MarketplaceState={credits:number;summary:{newLeads:number;activeLeads:number;offers:number;won:number;pipelineValue:number};ownRequests:MarketRequest[];receivedOffers:Offer[];givenReviews:Review[];requests:MarketRequest[];leads:Lead[];tasks:Task[];offers:Offer[];messages:Message[];providers:Provider[];reviews:Review[]};
+export type CustomerReview={id:string;requestId:string;requestTitle:string;rating:number;body:string;providerName:string};
+export type ReviewRequest={requestId:string;title:string};
+export type MarketplaceState={credits:number;summary:{newLeads:number;activeLeads:number;offers:number;won:number;pipelineValue:number};ownRequests:MarketRequest[];receivedOffers:Offer[];givenReviews:Review[];customerReviews:CustomerReview[];customerReviewRequests:ReviewRequest[];requests:MarketRequest[];leads:Lead[];tasks:Task[];offers:Offer[];messages:Message[];providers:Provider[];reviews:Review[]};
 
 
 export type RequestFeed={items:MarketRequest[];total:number;page:number;pages:number};
