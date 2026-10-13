@@ -6,6 +6,7 @@ import {requireAccount,requireManager} from '@/lib/accounts/store';
 import {HttpError} from '@/lib/http';
 import type {Job,JobInput,JobApplication,JobPage,applicationInput} from './model';
 import type {z} from 'zod';
+import {demoJobs,isDemoJob} from './demo';
 
 const columns='j.id,j.account_id AS accountId,a.name AS companyName,p.ico AS companyIco,p.avatar_url AS companyLogo,j.title,j.category,j.city,j.region,j.address,j.employment_types AS employmentTypes,j.work_mode AS workMode,j.salary_min AS salaryMin,j.salary_max AS salaryMax,j.salary_period AS salaryPeriod,j.description,j.responsibilities,j.requirements,j.benefits,j.education,j.experience,j.languages,j.suitable_graduates AS suitableGraduates,j.suitable_disability AS suitableDisability,j.contact_name AS contactName,j.contact_email AS contactEmail,j.contact_phone AS contactPhone,j.apply_url AS applyUrl,j.start_date AS startDate,j.expires_at AS expiresAt,j.status,j.published_at AS publishedAt,j.created_at AS createdAt,j.updated_at AS updatedAt';
 const joins=' FROM job_postings j JOIN accounts a ON a.id=j.account_id JOIN provider_profiles p ON p.account_id=a.id';
@@ -23,11 +24,24 @@ export function publicJobs(params:URLSearchParams):JobPage {
  if(Number.isFinite(minimum)&&minimum>0){clauses.push("j.salary_period='MONTH' AND COALESCE(j.salary_max,j.salary_min)>=?");values.push(minimum);}
  const where=' WHERE '+clauses.join(' AND ');
  const total=query('SELECT COUNT(*) AS n'+joins+where,...values).get<{n:number}>()!.n;
- const pages=Math.max(1,Math.ceil(total/20)),page=Math.max(1,Math.min(pages,Number.parseInt(params.get('page')??'1',10)||1));
- const items=query('SELECT '+columns+joins+where+' ORDER BY j.published_at DESC,j.id LIMIT 20 OFFSET ?',...values,(page-1)*20).all<Row>().map(hydrate);
- return {items,total,page,pages};
+ const demo=demoJobs().filter(job=>
+  (!q||(job.title+' '+job.companyName+' '+job.city).toLocaleLowerCase('cs').includes(q.toLocaleLowerCase('cs'))) &&
+  (!params.get('category')||job.category===params.get('category')) &&
+  (!params.get('region')||job.region===params.get('region')) &&
+  (!params.get('mode')||job.workMode===params.get('mode')) &&
+  (!params.get('type')||job.employmentTypes.includes(params.get('type') as Job['employmentTypes'][number])) &&
+  (params.get('graduates')!=='1'||job.suitableGraduates) &&
+  (!(Number.isFinite(minimum)&&minimum>0)||(job.salaryPeriod==='MONTH'&&(job.salaryMax??job.salaryMin??0)>=minimum))
+ );
+ const combinedTotal=total+demo.length;
+ const pages=Math.max(1,Math.ceil(combinedTotal/20)),page=Math.max(1,Math.min(pages,Number.parseInt(params.get('page')??'1',10)||1));
+ const offset=(page-1)*20;
+ const real=offset<total?query('SELECT '+columns+joins+where+' ORDER BY j.published_at DESC,j.id LIMIT 20 OFFSET ?',...values,offset).all<Row>().map(hydrate):[];
+ const items=[...real,...demo.slice(Math.max(0,offset-total),Math.max(0,offset-total)+20-real.length)];
+ return {items,total:combinedTotal,page,pages};
 }
 export function publicJob(id:string):Job|null {
+ if(isDemoJob(id))return demoJobs().find(job=>job.id===id)??null;
  const row=query('SELECT '+columns+joins+' WHERE '+visible+' AND j.id=?',id).get<Row>();
  return row?hydrate(row):null;
 }
@@ -55,6 +69,7 @@ export function closeJob(user:User,id:string) {
  if(!query("UPDATE job_postings SET status='CLOSED',updated_at=? WHERE id=? AND account_id=?",new Date().toISOString(),id,account.id).run().changes)throw new HttpError(404,'Nabídka nebyla nalezena.');
 }
 export function applyToJob(user:User,input:z.infer<typeof applicationInput>) {
+ if(isDemoJob(input.jobId))throw new HttpError(400,'Toto je pouze ukázková pozice. Nelze na ni reagovat.');
  const account=requireAccount(user,'customer');
  if(!publicJob(input.jobId))throw new HttpError(404,'Nabídka již není dostupná.');
  if(query('SELECT 1 FROM job_applications WHERE job_id=? AND customer_account_id=?',input.jobId,account.id).get())throw new HttpError(409,'Na tuto pozici už jste reagovali.');
