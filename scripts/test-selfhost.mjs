@@ -345,7 +345,7 @@ try {
   check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'save',data:vacancy}})).status===403,'customers cannot post vacancies');
   const draft=await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',data:vacancy}});
   assert.equal(draft.status,200,await draft.clone().text());const jobId=(await draft.json()).id;
-  check((await (await request('/api/jobs/')).json()).total===0,'draft jobs are hidden from public searches');
+  check((await (await request('/api/jobs/')).json()).total===5,'draft jobs are hidden while five demo listings remain public');
   check((await request('/prace/'+jobId+'/')).status===404,'draft job detail is not public');
   check((await request('/api/jobs/',{cookie:bob,body:{action:'save',id:jobId,data:vacancy}})).status===404,'another employer cannot edit a vacancy');
   check((await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,salaryMax:1}}})).status===400,'invalid salary ranges are rejected');
@@ -363,11 +363,13 @@ try {
   check(homePage.includes('href="/prace/"')&&homePage.includes('Pracovní nabídky'),'main website navigation links directly to public job search');
   const jobData=await (await request('/api/jobs/?category=construction&region=moravskoslezsky&type=FULL_TIME&salary=60000')).json();
   check(jobData.total===1&&jobData.items[0].companyName==='Test business','combined anonymous job filters and authoritative employer name work');
-  check((await (await request('/api/jobs/?salary=80000')).json()).total===0,'monthly salary filter excludes lower offers');
+  check((await (await request('/api/jobs/?salary=100000')).json()).total===0,'monthly salary filter excludes lower offers');
   check((await (await request('/api/jobs/?mode=REMOTE')).json()).total===0,'work mode filter works');
-  check((await (await request('/api/jobs/?graduates=1')).json()).total===0,'graduate filter works');
+  check((await (await request('/api/jobs/?graduates=1')).json()).total===2,'graduate filter includes the two matching demo positions');
   const jobHtml=await (await request('/prace/'+jobId+'/')).text();
   check(jobHtml.includes('JobPosting')&&jobHtml.includes('Stavbyvedoucí')&&jobHtml.includes('hr@example.test'),'public job detail includes structured job data and employer contact');
+  const demoListing=await (await request('/prace/demo-stavbyvedouci/')).text();
+  check(demoListing.includes('Ukázkový inzerát')&&!demoListing.includes('JobPosting')&&!demoListing.includes('Reagovat na pozici'),'demo details cannot be mistaken for a real vacancy');
   const reaction={jobId,name:'Jan Uchazeč',phone:'+420777555666',message:'Mám zájem o tuto pracovní pozici a zkušenosti s vedením staveb.',resumeUrl:''};
   check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===200,'customer can respond to a job');
   check((await request('/api/jobs/',{cookie:customer.cookie,body:{action:'apply',data:reaction}})).status===409,'duplicate job applications are rejected');
@@ -383,7 +385,7 @@ try {
   await request('/api/jobs/',{cookie:company.cookie,body:{action:'save',id:jobId,data:{...vacancy,status:'PUBLISHED'}}});
   const jobDb=new DatabaseSync(filename);
   jobDb.prepare("UPDATE job_postings SET expires_at='2000-01-01' WHERE id=?").run(jobId);jobDb.close();
-  check((await (await request('/api/jobs/')).json()).total===0,'expired jobs disappear without a scheduled job');
+  check((await (await request('/api/jobs/')).json()).total===5,'expired real jobs disappear while demo listings remain');
 
   const testDb=new DatabaseSync(filename);
   const memberId=testDb.prepare('SELECT id FROM users WHERE email=?').get('stranger@example.test').id;
